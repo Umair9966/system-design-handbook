@@ -1,0 +1,41 @@
+name: System Design Handbook CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Markdownlint and Mermaid CLI
+        run: |
+          npm install -g markdownlint-cli @mermaid-js/mermaid-cli
+
+      - name: Check Broken Markdown Links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          check-modified-files-only: 'yes'
+          config-file: '.github/workflows/markdown-link-config.json'
+
+      - name: Verify Documentation Structure
+        run: |
+          echo "Verifying mandatory root files..."
+          test -f README.md || exit 1
+          test -f ROADMAP.md || exit 1
+          test -f CONTRIBUTING.md || exit 1
+          test -f LICENSE || exit 1
+          test -f docs/00-how-to-use-this-repo.md || exit 1
+          test -f docs/21-glossary.md || exit 1
+          echo "All mandatory files present and accounted for!"
