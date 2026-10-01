@@ -1,80 +1,76 @@
-# Design a Social News Feed and Timeline System (Twitter/X)
+# Design a Social Media News Feed (Facebook / Instagram)
 
-> **System Scope**: High-throughput social timeline generating personalized home feeds for hundreds of millions of users.
-> Employs a hybrid fan-out model: Fan-out-on-write for standard users paired with Fan-out-on-read for high-follower celebrities.
+A scalable social network news feed system delivering personalized, chronologically and algorithmically ranked feeds to 1 Billion users with sub-200ms latency.
+
+```mermaid
+graph TD
+    Client[User App] --> CDN[Edge CDN]
+    CDN --> LB[L7 Load Balancer]
+    LB --> GW[API Gateway]
+
+    subgraph Feed Publishing (Write Path)
+        GW --> PostSvc[Post Service]
+        PostSvc --> PostDB[(Post DB: PostgreSQL / Cassandra)]
+        PostSvc --> FanoutWorker[Fanout Worker Pool]
+        FanoutWorker --> FollowerCache[(Follower Timelines: Redis Cluster)]
+    end
+
+    subgraph Feed Reading (Read Path)
+        GW --> FeedSvc[Feed Generation Service]
+        FeedSvc --> FollowerCache
+        FeedSvc --> Ranker[ML Ranking Engine]
+        Ranker --> CDN
+    end
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a social news feed and timeline system (twitter/x) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a social news feed and timeline system (twitter/x).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Users can post content (text, images, video links).
+2. Users have a personalized News Feed showing updates from friends, pages, and followed creators.
+3. Feeds are ranked using relevance algorithms (recency, engagement, relationships).
+4. Pagination: Infinite scroll feed loading 20 items per batch.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Feed Generation Latency**: p99 $< 200	ext{ms}$.
+- **Availability**: 99.99%.
+- **Scale**: 500M DAU reading feeds 5 times per day.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Capacity & Fanout Sizing
 
-## 4. API Design
-```http
-POST /api/v1/a-social-news-feed-and-timeline-system-(twitter/x)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+- **DAU**: 500 Million.
+- **Feed Views/Day**: $500	ext{M} 	imes 5 = 2.5	ext{ Billion feed loads/day}$.
+- **Read QPS**: $rac{2,500,000,000}{86,400} pprox \mathbf{30,000	ext{ QPS}}$ (Peak: $60,000	ext{ QPS}$).
+- **Posts/Day**: 100 Million posts/day $\implies \mathbf{1,200	ext{ write QPS}}$.
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
+### The Fanout Hybrid Strategy:
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Social News Feed and Timeline System (Twitter/X) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    Post[New Post Published] --> Check{Is Author a Celebrity? (>50K followers)}
+    Check -->|No: Normal User| Push[Fanout-on-Write: Push PostID into all follower Redis lists]
+    Check -->|Yes: Celebrity| Pull[Fanout-on-Read: Store in Celebrity Post List only]
+    
+    User[Follower Reads Feed] --> Merge[Timeline Service merges Redis list + Celebrity posts in RAM]
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. Feed Cache Structure (Redis Sorted Sets)
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+Store timeline feeds as Redis Sorted Sets (`ZSET`), where the **member** is `post_id` and the **score** is `timestamp` (or ranking score):
+```
+ZADD timeline:user_123 1696156800 post_9981
+ZREVRANGEBYSCORE timeline:user_123 +inf -inf LIMIT 0 20
+```
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+---
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+## 4. Key Takeaways
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Implement a Hybrid Fanout architecture: Fanout-on-Write for normal users, Fanout-on-Read for celebrities.
+- Use Redis Sorted Sets (`ZSET`) keyed by `user_id` for instant pagination retrieval.
+- Separate post content storage (S3 + DB) from feed index pointers (Redis).

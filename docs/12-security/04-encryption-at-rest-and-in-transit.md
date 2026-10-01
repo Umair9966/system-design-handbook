@@ -1,53 +1,51 @@
-# Encryption at Rest, in Transit, and Key Management
+# Encryption at Rest and in Transit
 
-> **Summary**: Cryptographic architecture: symmetric AES-256 at rest, asymmetric RSA/ECC key exchange, and TLS 1.3 in transit.
-> Explains Key Management Services (KMS), Hardware Security Modules (HSM), and Envelope Encryption with DEKs and KEKs.
+Data security requires end-to-end protection against eavesdropping, physical theft, man-in-the-middle (MitM) attacks, and unauthorized database access.
+
+```mermaid
+graph LR
+    Client[Client Browser] -->|TLS 1.3 (In-Transit)| Edge[Cloudflare / Cloud WAF]
+    Edge -->|mTLS (In-Transit)| App[Application Service]
+    App -->|Envelope Encryption: AES-256-GCM| KMS[KMS / Vault]
+    App -->|Encrypted Ciphertext| DB[(Encrypted Database at Rest)]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of encryption at rest, in transit, and key management.
+## 1. Encryption in Transit: Modern TLS 1.3
 
-## Why It Matters
-TBD: The operational and engineering problems encryption at rest, in transit, and key management solves at scale.
+- **TLS 1.3**: Reduces handshake latency from 2 round-trips to **1-RTT** (or 0-RTT resumption), and completely removes vulnerable legacy ciphers (RC4, 3DES, CBC mode).
+- **Forward Secrecy (PFS)**: Uses ephemeral Diffie-Hellman keys (`ECDHE`). Even if the server's private master key is compromised in the future, past recorded encrypted traffic cannot be decrypted.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Encryption at Rest & Envelope Encryption
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Directly storing master encryption keys alongside encrypted data is fatal. Production architectures use **Envelope Encryption**:
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as Application Service
+    participant KMS as AWS KMS / Vault
+    participant DB as Database / S3 Storage
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+    App->>KMS: GenerateDataKey(MasterKeyId)
+    KMS-->>App: Plaintext Data Key + Ciphertext Data Key (Encrypted under Root KMS Key)
+    Note over App: 1. Encrypts user data with Plaintext Data Key (AES-256-GCM)
+    Note over App: 2. Erases Plaintext Data Key from RAM memory immediately!
+    App->>DB: Stores Encrypted Data + Ciphertext Data Key
+    
+    Note over App,DB: Decryption Flow:
+    App->>KMS: Decrypt(Ciphertext Data Key)
+    KMS-->>App: Plaintext Data Key
+    Note over App: Decrypts data, then wipes key from RAM!
+```
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+---
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+## 3. Key Takeaways
 
-## Key Takeaways
-- Foundational architectural trade-offs define encryption at rest, in transit, and key management.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does encryption at rest, in transit, and key management impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing encryption at rest, in transit, and key management?
-3. How do you scale encryption at rest, in transit, and key management under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Enforce TLS 1.3 with Perfect Forward Secrecy for all external and internal network communication.
+- Use Envelope Encryption (KMS) so root master keys never leave dedicated Hardware Security Modules (HSMs).
+- Secure sensitive columns (SSNs, credit cards) with Application-Layer Encryption before persisting to disk.

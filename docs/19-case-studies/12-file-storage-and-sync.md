@@ -1,80 +1,84 @@
-# Design a Cloud File Storage and Synchronization Service (Dropbox)
+# Design a Cloud File Storage and Sync Service (Dropbox / Google Drive)
 
-> **System Scope**: Desktop and mobile cloud file synchronization platform handling multi-gigabyte files and real-time updates.
-> Features chunk-level deduplication, delta sync algorithms, local OS file system watchers, and block storage architectures.
+A distributed file synchronization and storage service supporting cross-device synchronization, chunk-level deduplication, delta syncing, and offline editing.
+
+```mermaid
+graph TD
+    ClientApp[Desktop / Mobile Sync Client] --> SyncAPI[Sync Gateway Service]
+    SyncAPI --> BlockSvc[Block Storage Service]
+    SyncAPI --> MetaSvc[Metadata Service]
+
+    BlockSvc --> S3[(Encrypted Chunks Store: S3)]
+    MetaSvc --> MetaDB[(Metadata Store: CockroachDB)]
+    
+    SyncAPI --> Notification[Notification Service: Long-Polling / WebSockets]
+    Notification --> RemoteClient[Other Paired Devices]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a cloud file storage and synchronization service (dropbox) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a cloud file storage and synchronization service (dropbox).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Users can upload, download, and sync files across desktop and mobile devices.
+2. Delta Sync: When a file is modified, upload only changed chunks—not the entire file.
+3. Offline Editing: Users can edit files offline; conflicts resolved upon reconnecting.
+4. File versioning and rollback history (30-day version recovery).
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Efficiency**: Minimize network bandwidth consumption via block-level deduplication.
+- **Strong Consistency**: File metadata must reflect the latest state across devices.
+- **Data Durability**: 99.999999999% durability for stored files.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Chunking and Delta Synchronization
 
-## 4. API Design
-```http
-POST /api/v1/a-cloud-file-storage-and-synchronization-service-(dropbox)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Files are divided into 4MB chunks (or variable-size chunks using Rabin Fingerprinting):
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Cloud File Storage and Synchronization Service (Dropbox) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    File[Original File: 16 MB] --> C1[Chunk 1 (4MB): Hash A]
+    File --> C2[Chunk 2 (4MB): Hash B]
+    File --> C3[Chunk 3 (4MB): Hash C]
+    File --> C4[Chunk 4 (4MB): Hash D]
+
+    UserEdits[User edits 1 sentence in Chunk 3] --> NewFile[Modified File]
+    NewFile --> NC1[Chunk 1: Hash A - Unchanged]
+    NewFile --> NC2[Chunk 2: Hash B - Unchanged]
+    NewFile --> NC3[Chunk 3: Hash E - MODIFIED!]
+    NewFile --> NC4[Chunk 4: Hash D - Unchanged]
+
+    Note over NC3: Client uploads ONLY Chunk 3 (4MB)! Saves 12MB of bandwidth!
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. Metadata Schema (CockroachDB)
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+```sql
+CREATE TABLE file_metadata (
+    file_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    path TEXT NOT NULL,
+    version INT NOT NULL,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+CREATE TABLE file_blocks (
+    file_id UUID,
+    block_index INT,
+    block_hash VARCHAR(64) NOT NULL, -- SHA-256
+    size_bytes INT NOT NULL,
+    PRIMARY KEY (file_id, block_index)
+);
+```
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Chunk files into 4MB blocks to support delta sync and client-side deduplication.
+- Decouple metadata synchronization (relational CockroachDB) from binary chunk transport (S3).
+- Notify paired devices of remote file changes in real time via persistent notification channels.

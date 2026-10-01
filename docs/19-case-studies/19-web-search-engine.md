@@ -1,80 +1,75 @@
-# Design a Large-Scale Web Search Engine (Google Architecture)
+# Design a Large-Scale Web Search Engine (Google Search)
 
-> **System Scope**: Full-scale web search engine handling billions of daily queries across petabytes of crawled documents.
-> Details distributed inverted indexes, PageRank link graph computation, tiered query processing nodes, and snippet generation.
+A petabyte-scale search engine architecture handling the full lifecycle of internet search: distributed crawling, index building, inverted indexing, and multi-stage ranking (PageRank + BM25 + Deep Learning).
+
+```mermaid
+graph TD
+    Query[User Query: 'distributed systems'] --> GW[Search API Gateway]
+    GW --> Spell[Spellcheck & Query Rewriter]
+    Spell --> Dispatcher[Search Index Dispatcher]
+
+    Dispatcher --> Shard1[Index Shard 1]
+    Dispatcher --> Shard2[Index Shard 2]
+    Dispatcher --> ShardN[Index Shard N]
+
+    Shard1 --> Merge[Priority Queue Result Merger]
+    Shard2 --> Merge
+    ShardN --> Merge
+
+    Merge --> Ranker[ML Ranking Model: PageRank + BM25]
+    Ranker --> SnippetSvc[Document Summary & Snippet Generator]
+    SnippetSvc --> Query
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a large-scale web search engine (google architecture) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a large-scale web search engine (google architecture).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Search billions of web pages by keyword queries.
+2. Return ranked list of 10 most relevant documents with titles, URLs, and snippet summaries.
+3. Query suggestions and spelling correction.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Ultra-Fast Latency**: p99 search query latency $< 200	ext{ms}$.
+- **Massive Scale**: Index tens of billions of web pages.
+- **Relevance**: High precision and recall.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Inverted Index Partitioning: Term Partitioning vs Document Partitioning
 
-## 4. API Design
-```http
-POST /api/v1/a-large-scale-web-search-engine-(google-architecture)
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Large-Scale Web Search Engine (Google Architecture) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    subgraph "1. Term Partitioning (By Word)"
+        NodeA["Node A holds all docs for words: 'apple' -> 'cat'"]
+        NodeB["Node B holds all docs for words: 'dog' -> 'zebra'"]
+        Note over NodeA: Single multi-word query must scatter-gather across nodes!
+    end
+
+    subgraph "2. Document Partitioning (By Doc ID - Standard Practice)"
+        Node1["Node 1 holds words for Doc 1 to 10,000,000"]
+        Node2["Node 2 holds words for Doc 10,000,001 to 20,000,000"]
+        Note over Node1,Node2: Every node evaluates full query independently over local subset!
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+Modern search engines use **Document Partitioning**: every shard evaluates the full multi-word query against its local subset of documents, minimizing cross-node network dependencies.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. The PageRank Algorithm
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+Web pages are ranked not just by keyword density, but by authority measured by incoming links:
+$$PR(u) = rac{1-d}{N} + d \sum_{v \in B_u} rac{PR(v)}{L(v)}$$
+- $B_u$: Set of pages linking to page $u$.
+- $L(v)$: Number of outbound links on page $v$.
+- $d$: Damping factor (typically 0.85).
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use Document Partitioning to build horizontally scalable inverted index clusters.
+- Precompute PageRank and static quality scores offline.
+- Execute two-stage ranking: fast inverted index candidate retrieval followed by deep neural ranking models.

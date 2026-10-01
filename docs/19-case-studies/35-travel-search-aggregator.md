@@ -1,80 +1,71 @@
-# Design a Flight and Hotel Search Aggregator (Kayak/Skyscanner)
+# Design a Travel Search Aggregator (Kayak / Skyscanner)
 
-> **System Scope**: High-fan-out search aggregator querying hundreds of external airline and hotel partner APIs in parallel.
-> Implements scatter-gather query orchestration, strict timeout budgets, circuit breakers, aggressive caching, and deduplication.
+A distributed travel search engine that aggregates real-time flight, hotel, and car rental prices from hundreds of third-party airline APIs and Global Distribution Systems (GDS: Amadeus, Sabre), handling high supplier latency and volatile pricing.
+
+```mermaid
+graph TD
+    User[Traveler: NYC to LON on Oct 10] --> API[Search Aggregator Gateway]
+    API --> Cache[(Aggregated Flight Price Cache: Redis)]
+    
+    API --> FanoutWorker[Supplier Fanout Dispatcher]
+    
+    par Parallel Supplier Queries (with 2-second deadline!)
+        FanoutWorker --> Delta[Delta Airlines API]
+        FanoutWorker --> United[United Airlines API]
+        FanoutWorker --> BA[British Airways API]
+        FanoutWorker --> GDS[Sabre / Amadeus GDS]
+    end
+
+    Delta --> StreamAgg[Streaming Aggregator / WebSockets]
+    United --> StreamAgg
+    BA --> StreamAgg
+    GDS --> StreamAgg
+
+    StreamAgg --> User
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a flight and hotel search aggregator (kayak/skyscanner) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a flight and hotel search aggregator (kayak/skyscanner).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Search round-trip and one-way flights across hundreds of airlines.
+2. Filter and sort by price, duration, stops, and airline.
+3. Stream results progressively to user browser as airlines respond.
+4. Booking handoff: Redirect user to airline booking portal with verified pricing.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Resilience to Slow Downstreams**: Airline partner APIs take 2-8 seconds to respond. Aggregator must never hang waiting for slow partners.
+- **Massive Fanout**: A single user query spawns 50+ external HTTP requests.
+- **Price Accuracy**: Prevent showing obsolete cached prices when flights sell out.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Progressive Streaming Search (WebSockets / SSE)
 
-## 4. API Design
-```http
-POST /api/v1/a-flight-and-hotel-search-aggregator-(kayak/skyscanner)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Waiting 8 seconds for all 50 airlines to respond before rendering the page results in high user bounce rates.
 
-{
-  "request_payload": "value"
-}
-```
+### The Progressive Streaming Pattern:
+1. Client initiates search: `POST /api/v1/flight-searches`.
+2. Gateway immediately opens a **Server-Sent Events (SSE)** or **WebSocket** connection.
+3. Instant Response: Deliver cached flight estimates from Redis within **50ms**.
+4. As individual airlines respond (at 500ms, 1.2s, 2.5s), stream newly discovered flight fares directly to the browser.
+5. Strict Deadline: Cut off slow airline queries at $T = 3.0	ext{ seconds}$ and finalize the search.
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+---
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Flight and Hotel Search Aggregator (Kayak/Skyscanner) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
+## 3. Caching Strategy for Volatile Airline Pricing
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+- Flight prices and seat availability change dynamically based on airline revenue management algorithms.
+- **TTL Strategy**:
+  - Hot routes (e.g., NYC to LON next week): 5-minute cache TTL.
+  - Distant routes (e.g., flight 9 months away): 6-hour cache TTL.
+- **Price Verification Step**: Before final redirect to booking, execute a synchronous real-time price check to confirm the fare is still available.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 4. Key Takeaways
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Stream search results progressively using Server-Sent Events (SSE) or WebSockets to display instant results.
+- Implement strict client deadlines (timeouts) on external supplier fanout calls.
+- Apply dynamic cache TTLs based on departure date proximity and route popularity.

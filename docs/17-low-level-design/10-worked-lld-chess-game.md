@@ -1,53 +1,124 @@
-# Worked LLD Problem: Object-Oriented Chess Game Engine
+# Worked LLD: Chess Game
 
-> **Summary**: Low-level domain modeling of a standard chess game: 8x8 Board, Piece base class, King/Queen/Rook/Bishop/Knight/Pawn subclasses.
-> Details move validation, turn management, move history logging, and Check/Checkmate evaluation state machines.
+A complete Low-Level Design for a standard two-player Chess game modeling boards, pieces, movement validations, turns, and checkmate detection.
+
+```mermaid
+classDiagram
+    class PieceColor {
+        <<enumeration>>
+        WHITE
+        BLACK
+    }
+    class Piece {
+        <<abstract>>
+        -PieceColor color
+        -boolean isKilled
+        +canMove(Board b, Spot start, Spot end) bool
+    }
+    class Spot {
+        -int x
+        -int y
+        -Piece piece
+    }
+    class Board {
+        -Spot[8][8] boxes
+        +getSpot(int x, int y) Spot
+        +resetBoard()
+    }
+    class ChessGame {
+        -Board board
+        -Player[2] players
+        -Player currentTurn
+        +makeMove(Move move) bool
+    }
+
+    Piece <|-- King
+    Piece <|-- Queen
+    Piece <|-- Rook
+    Piece <|-- Bishop
+    Piece <|-- Knight
+    Piece <|-- Pawn
+    Board "1" *-- "64" Spot
+    Spot --> Piece
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of worked lld problem: object-oriented chess game engine.
+## 1. Core Classes and Piece Movement (Python)
 
-## Why It Matters
-TBD: The operational and engineering problems worked lld problem: object-oriented chess game engine solves at scale.
+```python
+from enum import Enum
+from typing import Optional
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+class Color(Enum):
+    WHITE = 1
+    BLACK = 2
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+class Piece:
+    def __init__(self, color: Color):
+        self.color = color
+        self.is_alive = True
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+    def can_move(self, board, start, end) -> bool:
+        raise NotImplementedError
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+class Knight(Piece):
+    def can_move(self, board, start, end) -> bool:
+        # Destination cannot have same color piece
+        if end.piece and end.piece.color == self.color:
+            return False
+        
+        dx = abs(start.x - end.x)
+        dy = abs(start.y - end.y)
+        return (dx * dy) == 2 # 2 and 1 or 1 and 2
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+class Spot:
+    def __init__(self, x: int, y: int, piece: Optional[Piece] = None):
+        self.x = x
+        self.y = y
+        self.piece = piece
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+class Board:
+    def __init__(self):
+        self.grid = [[Spot(x, y) for y in range(8)] for x in range(8)]
+        self._init_pieces()
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+    def _init_pieces(self):
+        self.grid[0][1].piece = Knight(Color.WHITE)
+        self.grid[7][1].piece = Knight(Color.BLACK)
 
-## Key Takeaways
-- Foundational architectural trade-offs define worked lld problem: object-oriented chess game engine.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+class ChessGame:
+    def __init__(self):
+        self.board = Board()
+        self.turn = Color.WHITE
 
-## Common Interview Questions
-1. How does worked lld problem: object-oriented chess game engine impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing worked lld problem: object-oriented chess game engine?
-3. How do you scale worked lld problem: object-oriented chess game engine under 10x traffic spikes?
+    def make_move(self, start_x, start_y, end_x, end_y) -> bool:
+        start_spot = self.board.grid[start_x][start_y]
+        end_spot = self.board.grid[end_x][end_y]
+        piece = start_spot.piece
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+        if not piece or piece.color != self.turn:
+            return False
+
+        if not piece.can_move(self.board, start_spot, end_spot):
+            return False
+
+        # Execute move
+        if end_spot.piece:
+            end_spot.piece.is_alive = False
+
+        end_spot.piece = piece
+        start_spot.piece = None
+
+        # Toggle turn
+        self.turn = Color.BLACK if self.turn == Color.WHITE else Color.WHITE
+        return True
+```
+
+---
+
+## 2. Key Takeaways
+
+- Encapsulate move validation inside individual Piece subclasses (Polymorphism).
+- Represent board coordinates using immutable Spot objects.
+- Validate game-level invariants (checks, castling, en-passant) in the coordinating GameController.

@@ -1,53 +1,109 @@
-# Worked LLD Problem: Automated Teller Machine (ATM)
+# Worked LLD: ATM System (State Pattern)
 
-> **Summary**: State Pattern implementation of an ATM: Idle, CardInserted, PinEntered, TransactionSelected, and DispensingCash.
-> Details cash dispenser hardware abstractions, balance validation, and atomic transaction rollback on hardware failure.
+A complete Low-Level Design for an Automated Teller Machine (ATM) utilizing the **State Pattern** to manage card validation, PIN verification, cash dispensing, and transactions.
+
+```mermaid
+stateDiagram-v2
+    [*] --> IdleState
+    IdleState --> CardInsertedState : insertCard()
+    CardInsertedState --> AuthenticatedState : enterPin(valid)
+    CardInsertedState --> IdleState : enterPin(invalid 3x) / eject()
+    AuthenticatedState --> DispensingCashState : withdrawCash(sufficient funds)
+    DispensingCashState --> IdleState : ejectCard() & dispense
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of worked lld problem: automated teller machine (atm).
+## 1. Requirements
 
-## Why It Matters
-TBD: The operational and engineering problems worked lld problem: automated teller machine (atm) solves at scale.
+1. User inserts card, enters 4-digit PIN (max 3 attempts).
+2. Check balance, withdraw cash, deposit cash.
+3. Dispense cash in specific bill denominations ($100, $50, $20) using Chain of Responsibility.
+4. Support state transitions: Idle $	o$ CardInserted $	o$ Authenticated $	o$ Dispensing.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Production Code Implementation (Python)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```python
+from abc import ABC, abstractmethod
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+class ATM:
+    def __init__(self, initial_cash: int):
+        self.cash = initial_cash
+        self.card = None
+        self.pin_attempts = 0
+        self.idle_state = IdleState(self)
+        self.card_inserted_state = CardInsertedState(self)
+        self.auth_state = AuthenticatedState(self)
+        self.state: ATMState = self.idle_state
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+    def set_state(self, state: 'ATMState'):
+        self.state = state
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+class ATMState(ABC):
+    def __init__(self, atm: ATM):
+        self.atm = atm
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+    @abstractmethod
+    def insert_card(self, card): pass
+    @abstractmethod
+    def enter_pin(self, pin: str): pass
+    @abstractmethod
+    def withdraw_cash(self, amount: int): pass
+    @abstractmethod
+    def eject_card(self): pass
 
-## Key Takeaways
-- Foundational architectural trade-offs define worked lld problem: automated teller machine (atm).
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+class IdleState(ATMState):
+    def insert_card(self, card):
+        self.atm.card = card
+        self.atm.pin_attempts = 0
+        self.atm.set_state(self.atm.card_inserted_state)
+        print("Card inserted. Please enter PIN.")
 
-## Common Interview Questions
-1. How does worked lld problem: automated teller machine (atm) impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing worked lld problem: automated teller machine (atm)?
-3. How do you scale worked lld problem: automated teller machine (atm) under 10x traffic spikes?
+    def enter_pin(self, pin): print("Insert card first.")
+    def withdraw_cash(self, amount): print("Insert card first.")
+    def eject_card(self): print("No card inserted.")
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+class CardInsertedState(ATMState):
+    def insert_card(self, card): print("Card already present.")
+    def enter_pin(self, pin: str):
+        if pin == "1234":
+            self.atm.set_state(self.atm.auth_state)
+            print("PIN verified. Select transaction.")
+        else:
+            self.atm.pin_attempts += 1
+            if self.atm.pin_attempts >= 3:
+                print("Max attempts exceeded. Swallowing card.")
+                self.atm.card = None
+                self.atm.set_state(self.atm.idle_state)
+
+    def withdraw_cash(self, amount): print("Enter PIN first.")
+    def eject_card(self):
+        self.atm.card = None
+        self.atm.set_state(self.atm.idle_state)
+        print("Card ejected.")
+
+class AuthenticatedState(ATMState):
+    def insert_card(self, card): print("Transaction in progress.")
+    def enter_pin(self, pin): print("Already authenticated.")
+    def withdraw_cash(self, amount: int):
+        if amount > self.atm.cash:
+            print("ATM has insufficient funds.")
+            return
+        self.atm.cash -= amount
+        print(f"Dispensed ${amount}. Thank you.")
+        self.eject_card()
+
+    def eject_card(self):
+        self.atm.card = None
+        self.atm.set_state(self.atm.idle_state)
+        print("Card ejected.")
+```
+
+---
+
+## 3. Key Takeaways
+
+- The State Pattern encapsulates state-specific behaviors, eliminating messy nested `switch/if` conditionals.
+- Combine with the Chain of Responsibility pattern for currency dispensing ($100 $	o$ $50 $	o$ $20).

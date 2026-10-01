@@ -1,53 +1,62 @@
-# Chaos Engineering: Principles and Fault Injection
+# Chaos Engineering and Failure Injection
 
-> **Summary**: Principles of Chaos Engineering: formulating hypotheses about steady-state behavior before injecting failures.
-> Covers Chaos Monkey, terminating instances, simulating network latency/partitions, and testing automated recovery.
+Chaos Engineering is the discipline of experimenting on a distributed software system in production to build confidence in the system's capability to withstand turbulent conditions.
+
+```mermaid
+graph LR
+    Hypothesis[1. Define Steady State Hypothesis] --> Inject[2. Inject Controlled Failure in Prod]
+    Inject --> Observe[3. Observe Metrics & Blast Radius]
+    Observe --> Verify{Steady State Preserved?}
+    Verify -->|Yes| Confirmed[Hypothesis Confirmed]
+    Verify -->|No - System Crashed!| Fix[Uncovered Hidden Bug -> Remediate]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of chaos engineering: principles and fault injection.
+## 1. Principles of Chaos Engineering
 
-## Why It Matters
-TBD: The operational and engineering problems chaos engineering: principles and fault injection solves at scale.
+Coined by Netflix during the creation of **Chaos Monkey**:
+1. **Formulate a Hypothesis**: "If an entire AWS Availability Zone (AZ) dies, user checkout success rate will remain above 99.9%."
+2. **Introduce Real-World Variables**: Simulate node termination, packet loss, DNS outages, clock skew, and disk filling.
+3. **Minimize Blast Radius**: Start experiments on 1% of canary traffic with automated abort triggers.
+4. **Run in Production**: Production environments have unique traffic patterns, data scale, and cache states that staging environments can never replicate.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Common Chaos Experiments Matrix
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```mermaid
+graph TD
+    Exp[Chaos Experiments]
+    Exp --> Infra[Infrastructure Layer]
+    Exp --> Net[Network Layer]
+    Exp --> App[Application Layer]
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+    Infra --> I1[Kill Random VM / Pod]
+    Infra --> I2[Fill Disk to 100%]
+    Infra --> I3[Saturate CPU to 100%]
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+    Net --> N1[Inject 200ms Latency (Toxiproxy)]
+    Net --> N2[Inject 10% Packet Loss]
+    Net --> N3[Block Downstream Port / Blackhole]
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+    App --> A1[Inject HTTP 500 Responses]
+    App --> A2[Corrupt Cache Payloads]
+    App --> A3[Simulate Clock Drift (Time Travel)]
+```
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+---
 
-## Key Takeaways
-- Foundational architectural trade-offs define chaos engineering: principles and fault injection.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+## 3. Tooling Ecosystem
 
-## Common Interview Questions
-1. How does chaos engineering: principles and fault injection impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing chaos engineering: principles and fault injection?
-3. How do you scale chaos engineering: principles and fault injection under 10x traffic spikes?
+- **Chaos Mesh & LitmusChaos**: Cloud-native Kubernetes chaos injection engines.
+- **Toxiproxy**: Shopify's open-source TCP proxy for simulating network anomalies (flaky sockets, bandwidth limits, latency).
+- **Gremlin**: Enterprise chaos engineering platform with automated safety stop mechanisms.
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+---
+
+## 4. Key Takeaways
+
+- The goal of chaos engineering is to uncover hidden single-points-of-failure before they cause customer-facing outages.
+- Always implement an automated kill switch that halts the experiment if error budgets or SLIs are breached.
+- Never run chaos tests without comprehensive distributed observability and monitoring.

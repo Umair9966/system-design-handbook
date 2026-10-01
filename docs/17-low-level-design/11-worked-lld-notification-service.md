@@ -1,53 +1,102 @@
-# Worked LLD Problem: Extensible Notification Service
+# Worked LLD: Notification Service
 
-> **Summary**: Clean architecture for a multi-channel notification engine (Email, SMS, Push Notifications, In-App).
-> Implements the Adapter and Factory patterns for provider integrations, priority queues, and user rate limits.
+A complete Low-Level Design for an extensible, multi-channel notification engine (Email, SMS, Push, Slack) supporting user preference filtering, templates, and rate limiting.
+
+```mermaid
+classDiagram
+    class NotificationChannel {
+        <<interface>>
+        +send(NotificationMessage msg) bool
+    }
+    class EmailChannel {
+        +send(NotificationMessage msg) bool
+    }
+    class SMSChannel {
+        +send(NotificationMessage msg) bool
+    }
+    class PushChannel {
+        +send(NotificationMessage msg) bool
+    }
+    class NotificationDispatcher {
+        -Map~String, NotificationChannel~ channels
+        +dispatch(NotificationMessage msg)
+    }
+
+    NotificationChannel <|.. EmailChannel
+    NotificationChannel <|.. SMSChannel
+    NotificationChannel <|.. PushChannel
+    NotificationDispatcher --> NotificationChannel
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of worked lld problem: extensible notification service.
+## 1. Functional Requirements
 
-## Why It Matters
-TBD: The operational and engineering problems worked lld problem: extensible notification service solves at scale.
+1. Support Email, SMS, and Mobile Push channels.
+2. Dynamic templating engine.
+3. User preferences (e.g., User opt-out of SMS marketing).
+4. Extensibility: Add new channels (Slack, WhatsApp) without modifying existing channels (OCP).
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Production Code Implementation (Python)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```python
+from abc import ABC, abstractmethod
+from typing import Dict, List
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+class NotificationMessage:
+    def __init__(self, user_id: str, channel: str, template: str, params: Dict[str, str]):
+        self.user_id = user_id
+        self.channel = channel
+        self.template = template
+        self.params = params
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+class NotificationChannel(ABC):
+    @abstractmethod
+    def send(self, message: NotificationMessage) -> bool: pass
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+class EmailChannel(NotificationChannel):
+    def send(self, message: NotificationMessage) -> bool:
+        print(f"[EMAIL] Sent to {message.user_id}: {message.template}")
+        return True
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+class SMSChannel(NotificationChannel):
+    def send(self, message: NotificationMessage) -> bool:
+        print(f"[SMS] Sent to {message.user_id}: {message.template}")
+        return True
 
-## Key Takeaways
-- Foundational architectural trade-offs define worked lld problem: extensible notification service.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+class PushChannel(NotificationChannel):
+    def send(self, message: NotificationMessage) -> bool:
+        print(f"[PUSH] Sent to {message.user_id}: {message.template}")
+        return True
 
-## Common Interview Questions
-1. How does worked lld problem: extensible notification service impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing worked lld problem: extensible notification service?
-3. How do you scale worked lld problem: extensible notification service under 10x traffic spikes?
+class UserPreferenceService:
+    def is_channel_enabled(self, user_id: str, channel: str) -> bool:
+        return True # Checked against user settings DB
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+class NotificationDispatcher:
+    def __init__(self):
+        self.channels: Dict[str, NotificationChannel] = {}
+        self.prefs = UserPreferenceService()
+
+    def register_channel(self, name: str, channel: NotificationChannel):
+        self.channels[name] = channel
+
+    def dispatch(self, message: NotificationMessage) -> bool:
+        if not self.prefs.is_channel_enabled(message.user_id, message.channel):
+            return False # Suppressed by user preferences
+
+        channel = self.channels.get(message.channel)
+        if not channel:
+            raise ValueError(f"Unsupported channel: {message.channel}")
+
+        return channel.send(message)
+```
+
+---
+
+## 3. Key Takeaways
+
+- Apply the Strategy Pattern to make communication channels interchangeable.
+- Centralize rate limiting and preference checks before invoking expensive downstream provider APIs (Twilio, SendGrid).

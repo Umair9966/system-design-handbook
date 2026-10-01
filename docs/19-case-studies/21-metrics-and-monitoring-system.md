@@ -1,80 +1,72 @@
-# Design a Time-Series Metrics and Monitoring System (Prometheus/Datadog)
+# Design a Distributed Metrics and Monitoring System (Datadog / Prometheus)
 
-> **System Scope**: High-throughput monitoring platform ingesting, storing, and evaluating billions of operational telemetry metrics per minute.
-> Architects time-series database (TSDB) storage engines, Gorilla floating-point compression, downsampling rollups, and alert rules.
+A massive-scale time-series metric collection, aggregation, and alerting pipeline capable of ingesting billions of metric data points per day and answering analytical aggregation queries in seconds.
+
+```mermaid
+graph TD
+    App[Applications & Servers] --> Agent[Local Metric Agent / StatsD]
+    Agent --> IngestGW[Metric Ingestion Gateway]
+    IngestGW --> Kafka[Kafka Metric Stream]
+    
+    Kafka --> TSDB_Engine[Time-Series Storage Engine: VictoriaMetrics / M3DB]
+    Kafka --> StreamAgg[Real-Time Aggregator: 10s Rollup Windows]
+    
+    StreamAgg --> AlertEngine[Alert Evaluation Engine]
+    AlertEngine --> PagerDuty[PagerDuty / Slack Alerts]
+
+    TSDB_Engine --> Grafana[Grafana Dashboard Queries]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a time-series metrics and monitoring system (prometheus/datadog) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a time-series metrics and monitoring system (prometheus/datadog).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Ingest metric data points: `(metric_name, tags, timestamp, value)`.
+2. Support high-cardinality tagging (`service=order`, `region=us-east`, `host=i-1234`).
+3. Query aggregations: `sum(rate(http_requests[5m])) by (service)`.
+4. Configurable threshold alerting rules.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **High Ingestion Throughput**: Ingest 10 Million metric points per second.
+- **Query Performance**: Sub-second queries for dashboard graphs.
+- **Storage Efficiency**: Aggressive compression (Gorilla compression: $< 2$ bytes per sample).
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Gorilla Time-Series Compression Algorithm (Facebook)
 
-## 4. API Design
-```http
-POST /api/v1/a-time-series-metrics-and-monitoring-system-(prometheus/datadog)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Standard metric points require 16 bytes (8B timestamp + 8B float value). Facebook's **Gorilla** algorithm compresses this to an average of **1.37 bytes per data point**:
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Time-Series Metrics and Monitoring System (Prometheus/Datadog) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    subgraph "Gorilla Compression Pipeline"
+        T[Timestamps: Delta-of-Delta Variable Length Encoding]
+        V[Float Values: XOR against Previous Float Value]
+    end
+    T --> Comp[Compressed Bitstream: 1.37 bytes per point!]
+    V --> Comp
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### 1. Timestamp Delta-of-Delta:
+If metrics report every 60 seconds, the delta is 60. The delta-of-delta is $60 - 60 = 0$. A delta-of-delta of `0` is encoded as a **single bit `0`**!
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+### 2. Float XOR:
+Successive float values share significant leading and trailing zeros. Storing only the XOR delta eliminates redundant bits.
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+---
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+## 3. Rollup and Downsampling Pipelines
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+Raw 1-second metrics are aggressively downsampled:
+- **Raw (1s resolution)**: Retained for 7 days.
+- **Rollup (1m resolution)**: Retained for 30 days.
+- **Rollup (1h resolution)**: Retained for 1 year.
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+---
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
+## 4. Key Takeaways
 
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use Gorilla time-series compression (Delta-of-Delta + XOR) to reduce metric storage by 10x.
+- Decouple metric ingestion via Kafka to absorb sudden traffic bursts.
+- Downsample metrics into 1-minute and 1-hour rollup tiers to provide fast year-long queries.

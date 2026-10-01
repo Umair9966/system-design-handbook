@@ -1,53 +1,85 @@
-# Zero-Downtime Deployments and Database Schema Migrations
+# Zero-Downtime Deployment Strategies
 
-> **Summary**: Deployment strategies: Rolling Updates, Blue-Green Deployments, and Canary percentage traffic shifting.
-> Details zero-downtime database migrations using the Expand-Contract (Parallel Run) pattern.
+Zero-downtime deployment patterns release new software versions into production without interrupting active user traffic, dropping requests, or degrading availability.
+
+```mermaid
+graph TD
+    subgraph "1. Rolling Deployment"
+        R_Old[Old Pods: 3] --> R_Transit[Replace 1 by 1] --> R_New[New Pods: 3]
+    end
+
+    subgraph "2. Blue-Green Deployment"
+        Router[Router / Load Balancer]
+        Router -->|100% Traffic| Blue[Blue Environment (v1.0)]
+        Router -.->|0% Traffic (Staged & Tested)| Green[Green Environment (v2.0)]
+        Note over Router: Instant cutover flips pointer from Blue to Green
+    end
+
+    subgraph "3. Canary Deployment"
+        C_Router[Ingress Controller]
+        C_Router -->|95% Live Traffic| C_Stable[Stable Baseline (v1.0)]
+        C_Router -->|5% Canary Traffic| C_Canary[Canary Test (v2.0)]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of zero-downtime deployments and database schema migrations.
+## 1. Comparing Deployment Strategies
 
-## Why It Matters
-TBD: The operational and engineering problems zero-downtime deployments and database schema migrations solves at scale.
+| Dimension | Rolling | Blue-Green | Canary |
+| :--- | :--- | :--- | :--- |
+| **Downtime** | Zero | Zero | Zero |
+| **Infrastructure Cost** | Low (only needs +20% surge capacity) | High (requires 2x full production hardware) | Low (requires 5-10% extra capacity) |
+| **Rollback Speed** | Slow (must roll back pod by pod) | Instant (re-route load balancer back to Blue) | Instant (drop canary traffic routing) |
+| **Blast Radius** | Medium (all users hit new version gradually) | All-or-nothing cutover | Minimal (only 1-5% of users exposed) |
+| **Database Compatibility**| Requires strict backward compatibility | Requires strict backward compatibility | Requires strict backward compatibility |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Canary Deployments with Automated Metric Analysis (Kayenta)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```mermaid
+graph LR
+    Canary[Canary Deployment (v2.0 - 5%)] --> Telemetry[Prometheus / Datadog Metrics]
+    Telemetry --> Kayenta[Canary Analysis Engine]
+    Kayenta --> Check{Error Rate or Latency Spike?}
+    Check -->|No - Safe| Promote[Promote to 10%, 25%, 100%]
+    Check -->|Yes - Anomaly Detected!| Rollback[Automated Rollback to v1.0 within 30s]
+```
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. The Expand-Contract (Parallel Run) Database Migration Pattern
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+Zero-downtime deployments fail if a new version requires a database schema change that breaks the old version (e.g., renaming a column).
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AppV1 as Application v1.0
+    participant AppV2 as Application v2.0
+    participant DB as Relational Database
 
-## Key Takeaways
-- Foundational architectural trade-offs define zero-downtime deployments and database schema migrations.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+    Note over DB: Step 1: Expand (Add new column alongside old)
+    DB->>DB: ALTER TABLE users ADD COLUMN full_name VARCHAR(255);
+    
+    Note over AppV1: Step 2: Deploy Dual-Writing v1.1
+    AppV1->>DB: Writes both first_name + last_name AND full_name
+    
+    Note over DB: Step 3: Backfill historical rows in background
+    DB->>DB: UPDATE users SET full_name = first_name || ' ' || last_name;
+    
+    Note over AppV2: Step 4: Deploy v2.0 (Reads & Writes only full_name)
+    AppV2->>DB: SELECT full_name FROM users;
+    
+    Note over DB: Step 5: Contract (Drop old deprecated columns)
+    DB->>DB: ALTER TABLE users DROP COLUMN first_name, DROP COLUMN last_name;
+```
 
-## Common Interview Questions
-1. How does zero-downtime deployments and database schema migrations impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing zero-downtime deployments and database schema migrations?
-3. How do you scale zero-downtime deployments and database schema migrations under 10x traffic spikes?
+---
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+## 4. Key Takeaways
+
+- Prefer Canary deployments with automated metric analysis for high-traffic mission-critical services.
+- Never rename database columns directly in production; always use the multi-step Expand-Contract pattern.
+- Ensure applications implement graceful shutdown (handling SIGTERM, closing database connections, finishing in-flight requests) before terminating.

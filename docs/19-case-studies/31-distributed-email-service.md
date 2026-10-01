@@ -1,80 +1,55 @@
-# Design a High-Volume Distributed Email Delivery Service (SendGrid)
+# Design a Distributed Email Delivery Service (SendGrid / AWS SES)
 
-> **System Scope**: Massive transactional and marketing email delivery system sending billions of messages monthly.
-> Covers SMTP connection management, IP pool reputation warming, bounce and spam complaint processing, and queue throttling.
+A petabyte-scale transactional and marketing email delivery infrastructure capable of delivering 1 Billion emails per day while maintaining high IP reputation, honoring bounce/spam feedback loops, and avoiding ISP blacklists.
+
+```mermaid
+graph TD
+    Client[Application Client] --> API[Email API Gateway]
+    API --> Queue[Kafka Ingestion Topic]
+    
+    Queue --> SchedPool[Delivery Scheduler & IP Pool Allocator]
+    SchedPool --> MTA_Pool[Distributed Mail Transfer Agent - MTA Workers]
+    
+    MTA_Pool --> ISP[Target Email Servers: Gmail, Yahoo, Outlook]
+    ISP -->|Feedback Loop / Bounces| BounceHandler[Bounce & Unsubscribe Worker]
+    BounceHandler --> RepStore[(Suppression List: DynamoDB)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a high-volume distributed email delivery service (sendgrid) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a high-volume distributed email delivery service (sendgrid).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Send transactional emails (receipts, password resets) with sub-minute delivery.
+2. Send bulk marketing campaigns (millions of recipients).
+3. Handle bounces (hard vs soft), spam complaints, and unsubscribe links.
+4. Domain verification via DNS records: SPF, DKIM, DMARC.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **High Ingestion Throughput**: Ingest 50,000 emails per second.
+- **High Deliverability**: Strict IP reputation warming to prevent Gmail/Yahoo spam filtering.
+- **At-Least-Once Delivery**: No transactional emails dropped.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Deliverability Fundamentals: SPF, DKIM, and DMARC
 
-## 4. API Design
-```http
-POST /api/v1/a-high-volume-distributed-email-delivery-service-(sendgrid)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+To prevent email spoofing and ensure delivery to user inboxes:
+1. **SPF (Sender Policy Framework)**: DNS TXT record listing all IP addresses authorized to send emails on behalf of the domain.
+2. **DKIM (DomainKeys Identified Mail)**: The outgoing email header is cryptographically signed with the sender's private key; the receiving ISP validates it using the public key published in DNS.
+3. **DMARC**: Specifies policy (`reject`, `quarantine`) if SPF or DKIM validation fails.
 
-{
-  "request_payload": "value"
-}
-```
+---
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+## 3. Dedicated IP Warming and Suppression Lists
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a High-Volume Distributed Email Delivery Service (SendGrid) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
+- **IP Warming**: New MTA IP addresses cannot blast 10 Million emails on day one (Gmail will instantly blackhole the IP). Traffic must ramp up gradually: Day 1: 50 emails $	o$ Day 5: 5,000 $	o$ Day 15: 500,000 $	o$ Day 30: 10 Million.
+- **Suppression List**: If an email bounces as a **Hard Bounce** (invalid address) or user clicks "Spam", the address is added to an immutable suppression list. Future attempts to email this address are blocked immediately to protect domain reputation.
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 4. Key Takeaways
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Isolate transactional email IP pools from marketing email IP pools to protect critical 2FA delivery rates.
+- Enforce cryptographic DKIM signatures and strict DMARC policies.
+- Automatically drop requests to suppressed or hard-bounced email addresses.

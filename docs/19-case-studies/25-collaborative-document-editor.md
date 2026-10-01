@@ -1,80 +1,57 @@
-# Design a Real-Time Collaborative Document Editor (Google Docs)
+# Design a Real-Time Collaborative Document Editor (Google Docs / Notion)
 
-> **System Scope**: Concurrent document authoring platform allowing dozens of simultaneous editors per document with instant character synchronization.
-> Compares central Operational Transformation (OT) session servers against decentralized Conflict-Free Replicated Data Types (CRDTs).
+A real-time rich-text document editing platform allowing multiple concurrent users to edit the same document simultaneously with offline synchronization, presence cursors, and conflict-free text merging.
+
+```mermaid
+graph TD
+    ClientA[User A (Browser)] <-->|WebSocket: Local CRDT Edits| WS_GW[WebSocket Gateway]
+    ClientB[User B (Browser)] <-->|WebSocket: Local CRDT Edits| WS_GW
+
+    WS_GW --> DocSvc[Document Session Coordinator]
+    DocSvc <--> Redis[(Redis: Ephemeral State & Presence)]
+    DocSvc --> SnapshotWorker[Document Snapshot Worker]
+    SnapshotWorker --> DocDB[(Document Store: MongoDB / S3)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a real-time collaborative document editor (google docs) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a real-time collaborative document editor (google docs).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Multi-user concurrent text and block editing.
+2. Character-by-character real-time synchronization.
+3. Show live user cursors and text selections.
+4. Offline editing with automatic conflict resolution upon reconnect.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Low Latency**: Peer edit synchronization $< 50	ext{ms}$.
+- **Consistency**: All concurrent users eventually converge on the exact identical document text.
+- **Fault Tolerance**: No lost keystrokes during network drops.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. CRDTs: Yjs / Automerge vs Operational Transformation
 
-## 4. API Design
-```http
-POST /api/v1/a-real-time-collaborative-document-editor-(google-docs)
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Real-Time Collaborative Document Editor (Google Docs) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    subgraph "CRDT Character Model (Fractional Indexing)"
+        Char1["'H' (Pos: 0.5)"]
+        Char2["'e' (Pos: 0.75)"]
+        Char3["'l' (Pos: 0.875)"]
+        Char4["'o' (Pos: 0.9375)"]
+        Note over Char2,Char3: User inserts 'l' between 'e' and 'l':<br/>Assigned Pos: 0.8125! Zero index shifts!
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### Why Modern Systems Prefer CRDTs:
+- Characters receive immutable fractional identifiers rather than array indices.
+- Inserting a letter in the middle of a paragraph does not alter the coordinate IDs of subsequent characters.
+- Merges are commutative and associative; clients can sync peer-to-peer without waiting for a central master server.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Key Takeaways
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Adopt CRDTs (such as Yjs or Automerge) for modern offline-first real-time collaboration.
+- Track real-time presence (cursor position, selection) as ephemeral volatile state in Redis.
+- Persist periodic document snapshots to object storage (S3) to avoid replaying millions of granular keystroke operations on load.

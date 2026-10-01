@@ -1,53 +1,88 @@
-# Multi-Tenant Architecture: Isolation, Economics, and Security
+# Multi-Tenant Architecture (SaaS)
 
-> **Summary**: Compares multi-tenancy models: Database-per-tenant, Schema-per-tenant, and Shared-database with Tenant-ID column.
-> Analyzes noisy neighbor mitigation, tenant data isolation, per-tenant encryption keys, and tenant sharding.
+Multi-tenancy is an architectural model where a single software instance serves multiple distinct customer organizations (tenants), ensuring strict data isolation, cost efficiency, and performance predictability.
+
+```mermaid
+graph TD
+    subgraph "1. Silo Model (Separate Everything)"
+        T1_App[Tenant 1 App] --> T1_DB[(Tenant 1 DB)]
+        T2_App[Tenant 2 App] --> T2_DB[(Tenant 2 DB)]
+    end
+
+    subgraph "2. Pool Model (Shared Everything)"
+        SharedApp[Shared App Instances] --> SharedDB[(Shared Database)]
+        Note over SharedDB: Every table has tenant_id column
+    end
+
+    subgraph "3. Hybrid (Bridge Model)"
+        H_App[Shared App] --> H_DB_T1[(Tenant 1 DB - Enterprise)]
+        H_App --> H_DB_Shared[(Shared DB - Free Tier)]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of multi-tenant architecture: isolation, economics, and security.
+## 1. Multi-Tenancy Models Comparison
 
-## Why It Matters
-TBD: The operational and engineering problems multi-tenant architecture: isolation, economics, and security solves at scale.
+| Dimension | Silo (Dedicated Database) | Pool (Shared DB, Shared Schema) | Bridge (Shared DB, Separate Schemas) |
+| :--- | :--- | :--- | :--- |
+| **Data Isolation** | Complete / Physical isolation | Logical isolation via `tenant_id` | Logical / Schema isolation |
+| **Cost per Tenant** | High (expensive idle resources) | Minimal (maximum resource sharing) | Moderate |
+| **Noisy Neighbor Risk** | Zero | High (requires rate limits) | Low to Moderate |
+| **Schema Migration** | Slow ($N$ migrations for $N$ tenants) | Instant (1 migration updates all) | Moderate ($N$ schema updates) |
+| **Compliance (HIPAA, SOC2)**| Trivial | Requires strict logical proof | Accepted by most auditors |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Preventing Cross-Tenant Data Leaks (The Golden Rule)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+A multi-tenant application must **never** rely solely on application developers remembering to add `WHERE tenant_id = :id`. A single missed clause can cause catastrophic data leakage.
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```mermaid
+graph LR
+    Req[Incoming Request with JWT] --> GW[Extract tenant_id: 'org_123']
+    GW --> RLS[Postgres Row-Level Security (RLS)]
+    RLS --> DB[(Database Tables)]
+    Note over RLS: Enforces tenant_id = current_setting('app.current_tenant')<br/>Even 'SELECT * FROM users' returns only tenant rows!
+```
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+### PostgreSQL Row-Level Security (RLS) Implementation:
+```sql
+-- 1. Enable RLS on table
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+-- 2. Create Security Policy
+CREATE POLICY tenant_isolation_policy ON orders
+    FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+-- 3. On each request / connection acquisition:
+SET LOCAL app.current_tenant_id = 'a1b2c3d4-e5f6-...';
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define multi-tenant architecture: isolation, economics, and security.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+---
 
-## Common Interview Questions
-1. How does multi-tenant architecture: isolation, economics, and security impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing multi-tenant architecture: isolation, economics, and security?
-3. How do you scale multi-tenant architecture: isolation, economics, and security under 10x traffic spikes?
+## 3. Mitigating the "Noisy Neighbor" Problem
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+A single tenant generating millions of requests can consume all CPU, database connections, and cache space, starving other tenants.
+
+```mermaid
+graph TD
+    Req[Tenant Requests] --> TR[Per-Tenant Token Bucket Rate Limiter]
+    TR -->|Within Quota| App[App Workers]
+    TR -->|Exceeded Limit| 429[HTTP 429 Too Many Requests]
+    App --> PQ[Fair Queueing: Tenant Round-Robin Worker Pools]
+```
+
+### Defenses:
+1. **Per-Tenant Rate Limiting**: Redis token buckets keyed by `tenant_id`.
+2. **Fair Queueing**: Use separate queues or round-robin consumer loops so one tenant's backlog does not block others.
+3. **Tenant Sharding**: Large enterprise tenants get dedicated shard clusters; small free-tier tenants share pool shards.
+
+---
+
+## 4. Key Takeaways
+
+- Choose Pool model for standard SaaS cost efficiency; offer Silo for high-value enterprise tiers.
+- Enforce database isolation at the engine level using PostgreSQL Row-Level Security (RLS) or schema-per-tenant.
+- Implement per-tenant rate limiting and fair queueing to eliminate noisy neighbor degradation.

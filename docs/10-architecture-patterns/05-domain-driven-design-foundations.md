@@ -1,53 +1,102 @@
-# Domain-Driven Design (DDD) Foundations: Strategic and Tactical
+# Domain-Driven Design (DDD) Foundations
 
-> **Summary**: Introduces strategic DDD (Ubiquitous Language, Bounded Contexts, Context Mapping) for microservice decomposition.
-> Covers tactical DDD building blocks: Aggregates, Aggregate Roots, Entities, Value Objects, and Domain Events.
+Domain-Driven Design (DDD) is a software design approach introduced by Eric Evans that centers development around a rich, evolving model of the business domain.
+
+```mermaid
+graph TD
+    subgraph "Strategic DDD (Architecture & Boundaries)"
+        Domain[Core Domain: E-Commerce] --> Sub1[Core Domain: Order & Pricing Engine]
+        Domain --> Sub2[Supporting Domain: Inventory Management]
+        Domain --> Sub3[Generic Domain: Billing & Notification]
+        Sub1 --> BC1[Bounded Context: Order Context]
+        Sub2 --> BC2[Bounded Context: Inventory Context]
+    end
+
+    subgraph "Tactical DDD (Inside a Bounded Context)"
+        BC1 --> Agg[Aggregate Root: Order]
+        Agg --> Entity[Entity: OrderItem]
+        Agg --> VO[Value Object: Money, Address]
+        Agg --> DomainEvent[Domain Event: OrderPlaced]
+        Agg --> Repo[Repository: OrderRepository]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of domain-driven design (ddd) foundations: strategic and tactical.
+## 1. Strategic Design: Bounded Contexts and Ubiquitous Language
 
-## Why It Matters
-TBD: The operational and engineering problems domain-driven design (ddd) foundations: strategic and tactical solves at scale.
+### 1. Ubiquitous Language
+A single, unambiguous language shared between software engineers and business domain experts. 
+- *Bad*: Developers say `OrderRow` and `TransactionItem`, while business teams say `LineItem`.
+- *DDD Rule*: Pick one term (`LineItem`) and use it everywhere: in conversation, requirements, class names, database tables, and API fields.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### 2. Bounded Context
+A linguistic boundary within which a domain model applies consistently. The same real-world object can have different models in different contexts:
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+```mermaid
+graph LR
+    subgraph "Sales Bounded Context"
+        P1[Product: Price, Description, Images, Discounts]
+    end
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+    subgraph "Warehouse Bounded Context"
+        P2[Product: Weight, Dimensions, Barcode, ShelfLocation]
+    end
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+    subgraph "Customer Support Context"
+        P3[Product: Warranty, ReturnPolicy, SerialNumber]
+    end
+```
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 2. Context Mapping Patterns
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+How bounded contexts integrate and share models:
 
-## Key Takeaways
-- Foundational architectural trade-offs define domain-driven design (ddd) foundations: strategic and tactical.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+```mermaid
+graph LR
+    subgraph Context Relationships
+        U[Upstream: Core Billing] -->|Shared Kernel / Customer-Supplier| D1[Downstream: Invoice Service]
+        D1 -->|Anti-Corruption Layer (ACL)| Legacy[Downstream: Legacy ERP]
+    end
+```
 
-## Common Interview Questions
-1. How does domain-driven design (ddd) foundations: strategic and tactical impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing domain-driven design (ddd) foundations: strategic and tactical?
-3. How do you scale domain-driven design (ddd) foundations: strategic and tactical under 10x traffic spikes?
+- **Shared Kernel**: Two contexts share a subset of code and database tables. High coupling; requires synchronized deployments.
+- **Customer-Supplier**: Upstream provider delivers data needed by downstream consumer.
+- **Anti-Corruption Layer (ACL)**: A translation layer that converts upstream foreign models into the downstream context's native domain model, protecting clean services from messy legacy schemas.
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+---
+
+## 3. Tactical Design Building Blocks
+
+| Building Block | Definition | Mutability | Equality By | Example |
+| :--- | :--- | :--- | :--- | :--- |
+| **Entity** | Object with a unique, persistent thread of identity | Mutable | Unique Identifier (`ID`) | `User(id=42)`, `Order(id=99)` |
+| **Value Object** | Immutable object defined solely by its attributes | Immutable | Attribute equality | `Money(amount=10, currency="USD")` |
+| **Aggregate Root** | Cluster of entities and value objects treated as a single transactional unit | Mutable via Root | Root Entity ID | `Order` (root) containing `OrderItems` |
+| **Domain Event** | Record of a business event that has occurred in the past | Immutable | Event ID + Timestamp | `OrderCancelledEvent` |
+| **Repository** | Interface abstracting persistence and retrieval of aggregate roots | N/A | N/A | `OrderRepository.save(order)` |
+
+---
+
+## 4. The Aggregate Rule
+
+External objects are **only allowed to hold references to the Aggregate Root**. Direct mutation of inner entities is strictly forbidden:
+
+```java
+// VIOLATION of Aggregate Invariant
+order.getItems().get(0).setPrice(0.00); // Bypasses discount rules!
+
+// CORRECT DDD Practice
+order.applyDiscountCode("BLACKFRIDAY2026"); // Enforces validation inside the Aggregate Root
+```
+
+---
+
+## 5. Key Takeaways
+
+- Strategic DDD (Bounded Contexts) is the premier tool for establishing clean microservice boundaries.
+- Define a strict Ubiquitous Language with business domain experts to eliminate translation errors.
+- Protect clean domain models from legacy APIs using an Anti-Corruption Layer (ACL).
+- Enforce transactional consistency boundaries around Aggregate Roots, keeping aggregates small.

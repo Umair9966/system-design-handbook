@@ -1,80 +1,68 @@
-# Design a Real-Time Ad Click Aggregation and Analytics Pipeline
+# Design a Real-Time Ad Click Aggregation System (Google Ads / Facebook Ads)
 
-> **System Scope**: High-throughput streaming pipeline processing hundreds of thousands of ad click events per second for advertiser billing.
-> Implements Kafka ingestion buffers, Apache Flink tumbling window aggregations, click fraud deduplication, and ClickHouse OLAP storage.
+A high-throughput distributed stream aggregation pipeline capable of processing billions of ad impression and click events per day, detecting fraudulent bot clicks, and aggregating real-time advertiser billing metrics.
+
+```mermaid
+graph TD
+    AdClick[User Clicks Ad] --> Edge[Click Tracking Ingress Endpoint]
+    Edge --> Kafka[Kafka Raw Click Stream (Partitioned by ad_id)]
+    
+    Kafka --> Flink[Apache Flink Stream Processor]
+    
+    subgraph Stream Processing Pipeline
+        Flink --> FraudEngine[Fraud Detection: Bot IP & Velocity Filtering]
+        FraudEngine --> WindowAgg[Sliding Window Aggregator: 1-min & 1-hr rollups]
+    end
+
+    WindowAgg --> OLAP[(Analytical Store: ClickHouse / StarRocks)]
+    WindowAgg --> BillingDB[(Advertiser Billing Ledger: PostgreSQL)]
+    OLAP --> AdvertiserDashboard[Advertiser Real-Time Analytics Dashboard]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a real-time ad click aggregation and analytics pipeline supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a real-time ad click aggregation and analytics pipeline.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Track ad clicks and link them to corresponding impressions.
+2. Aggregate click metrics by `ad_id`, `campaign_id`, and geographic region across 1-minute and 1-hour tumbling windows.
+3. Detect fraudulent clicks (e.g., bot farms, duplicate clicks within 500ms).
+4. Update advertiser campaign balances in real time.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Exactly-Once Processing**: Advertisers must never be double-billed for duplicate events.
+- **Massive Ingestion Scale**: 100,000+ clicks/sec ($10	ext{ Billion clicks/day}$).
+- **Low End-to-End Latency**: Metrics reflected in advertiser dashboard within 5 seconds.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Stream Processing with Apache Flink (Tumbling & Sliding Windows)
 
-## 4. API Design
-```http
-POST /api/v1/a-real-time-ad-click-aggregation-and-analytics-pipeline
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Real-Time Ad Click Aggregation and Analytics Pipeline Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    subgraph "Tumbling Window: 1 Minute"
+        W1[Window: 12:00 - 12:01] --> Agg1[Sum Clicks = 4,210]
+        W2[Window: 12:01 - 12:02] --> Agg2[Sum Clicks = 5,120]
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### Handling Late-Arriving Events with Watermarks:
+Mobile network latency can delay click events by several minutes.
+- **Watermarking**: Flink tracks event-time progress. A watermark of $T - 10	ext{s}$ tells the engine: *"Assume all events with timestamp $< T - 10	ext{s}$ have arrived; finalize the window."*
+- Late events beyond the watermark trigger side-output streams to reconcile billing retroactively.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Fraud Detection Heuristics
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+1. **Duplicate Click Suppression**: Discard multiple clicks on the same ad from the same IP/Device within 1 second.
+2. **Velocity Thresholds**: An IP address generating $> 50$ clicks per minute is tagged as a click farm and excluded from billing.
+3. **User Agent & IP Reputation**: Cross-reference against datacenter proxy lists and headless browser signatures (Puppeteer/Selenium).
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use Apache Flink for scalable event-time window aggregation with checkpointing for exactly-once guarantees.
+- Ingest high-volume click streams through Kafka partitioned by `ad_id` to preserve per-ad ordering.
+- Filter fraudulent and duplicate clicks prior to billing aggregations.

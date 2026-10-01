@@ -1,53 +1,104 @@
-# API Documentation, OpenAPI Specifications, and Contract Testing
+# API Documentation, Versioning, and Contracts
 
-> **Summary**: Advocates API-First design using OpenAPI / Swagger specifications to generate client SDKs and mock servers.
-> Explores semantic API versioning strategies (URI path vs header vs parameter) and Consumer-Driven Contract testing.
+In microservice ecosystems, APIs are binding public contracts between teams and organizations. Effective versioning, backward compatibility, and automated schema contracts prevent outages and developer friction.
+
+```mermaid
+graph LR
+    Spec[OpenAPI / Protobuf Spec in Git] --> Lint[Spectral / Buf Linting]
+    Lint --> CI[Breaking Change Detection CI]
+    CI --> CodeGen[SDK & Stub Generation]
+    CI --> Mock[Mock Servers (Prism)]
+    CI --> Docs[Interactive Docs (Swagger / Redoc)]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of api documentation, openapi specifications, and contract testing.
+## 1. API Versioning Strategies
 
-## Why It Matters
-TBD: The operational and engineering problems api documentation, openapi specifications, and contract testing solves at scale.
+When breaking changes cannot be avoided, versioning ensures existing consumers continue operating without interruption.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+```mermaid
+graph TD
+    V1[API Versioning Strategies]
+    V1 --> URI[1. URI Path Versioning<br/>/v1/users, /v2/users]
+    V1 --> Header[2. Custom Header Versioning<br/>X-API-Version: 2026-10-01]
+    V1 --> Content[3. Content Negotiation / Accept Header<br/>Accept: application/vnd.company.v2+json]
+    V1 --> Query[4. Query Parameter<br/>/users?version=2]
+```
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+### Comparative Analysis:
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| Strategy | Example | Pros | Cons | Used By |
+| :--- | :--- | :--- | :--- | :--- |
+| **URI Path** | `https://api.example.com/v1/orders` | Clear, cache-friendly on CDNs, easy browser testing | Can lead to code duplication across controllers | Google, Twitter, Stripe (for major) |
+| **Custom Header** | `X-API-Version: 2026-10-01` | Clean URLs, allows granular date-based rolling versions | Cannot be tested directly in a browser URL bar | Stripe, Twilio |
+| **Accept Header** | `Accept: application/vnd.myapi.v2+json` | Follows pure REST HATEOAS standards | Hard to inspect, complicated client configurations | GitHub |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 2. Backward Compatibility Rules
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+A breaking change forces consumers to modify their client code. Follow Postel's Law: *"Be conservative in what you send, be liberal in what you accept."*
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```mermaid
+graph TD
+    subgraph "Safe (Non-Breaking) Changes"
+        N1[Add new optional query parameter]
+        N2[Add new field in response JSON]
+        N3[Add a completely new endpoint]
+    end
 
-## Key Takeaways
-- Foundational architectural trade-offs define api documentation, openapi specifications, and contract testing.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+    subgraph "Breaking Changes (Requires New Version)"
+        B1[Rename or delete an existing field]
+        B2[Change data type: int -> string]
+        B3[Add a new mandatory request parameter]
+        B4[Alter HTTP status code: 200 -> 204]
+    end
+```
 
-## Common Interview Questions
-1. How does api documentation, openapi specifications, and contract testing impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing api documentation, openapi specifications, and contract testing?
-3. How do you scale api documentation, openapi specifications, and contract testing under 10x traffic spikes?
+---
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+## 3. Contract-First vs Code-First Development
+
+```mermaid
+graph LR
+    subgraph "Contract-First (Recommended)"
+        C_Spec[1. Write OpenAPI 3.1 YAML] --> C_Review[2. Review Contract with Consumers]
+        C_Review --> C_Gen[3. Generate Server Stubs & Client SDKs]
+        C_Review --> C_Mock[4. Spin up Mock API Server]
+    end
+
+    subgraph "Code-First"
+        CF_Code[1. Write Backend Code] --> CF_Export[2. Extract Docs via Annotations]
+        CF_Export --> CF_Break[Risk: Accidental Breaking Changes]
+    end
+```
+
+---
+
+## 4. Consumer-Driven Contract Testing (Pact)
+
+Consumer-Driven Contract (CDC) testing validates that microservices adhere to expected contracts without running slow, flaky end-to-end integration environments.
+
+```mermaid
+sequenceDiagram
+    participant Consumer as Mobile / Frontend Team
+    participant PactBroker as Pact Contract Broker
+    participant Provider as Backend Team CI
+
+    Consumer->>Consumer: Run unit tests with Mock Provider
+    Consumer->>PactBroker: Publish pact contract (expected requests/responses)
+    Note over Provider: Backend CI pipeline runs
+    Provider->>PactBroker: Fetches latest consumer contracts
+    Provider->>Provider: Replays consumer requests against real backend controllers
+    Provider-->>PactBroker: Confirms contract verified (can-i-deploy: SUCCESS)
+```
+
+---
+
+## 5. Key Takeaways
+
+- Prefer Contract-First development with OpenAPI 3.1 or Protocol Buffers.
+- Use URI path versioning for major overhauls and date-based headers for rolling updates (Stripe model).
+- Treat response fields as additive-only. Never rename or delete fields without multi-month deprecation cycles.
+- Integrate automated breaking-change detectors (`openapi-diff` or `buf breaking`) directly into CI pull-request checks.

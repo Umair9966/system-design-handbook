@@ -1,53 +1,35 @@
-# Navigating Ambiguity and Whiteboard Communication Strategies
+# Communication Strategies and Navigating Ambiguity
 
-> **Summary**: Techniques for driving technical discussions, proactively clarifying ambiguities, and collaborating with interviewers.
-> Covers how to lead with trade-offs, handle unexpected pushback gracefully, and manage whiteboard time efficiently.
+System design interviews evaluate your ability to lead, clarify vague requirements, justify technical trade-offs, and collaborate as a technical peer.
+
+```mermaid
+graph TD
+    Vague[Interviewer: 'Design Twitter'] --> Trap{Candidate Action}
+    Trap -->|Silent assumption / Starts coding| Fail[Red Flag: Poor Communication & Assumptions]
+    Trap -->|Asks clarifying questions & drives scope| Pass[Senior Behavior: Drives Consensus & Clarity]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of navigating ambiguity and whiteboard communication strategies.
+## 1. Driving Rather than Being Led
 
-## Why It Matters
-TBD: The operational and engineering problems navigating ambiguity and whiteboard communication strategies solves at scale.
+- **Lead the Conversation**: Treat the interview as a collaborative design meeting with a colleague. Don't wait passively for instructions.
+- **State Assumptions Explicitly**: "I will assume a 100:1 read-to-write ratio typical of social networks. Does that align with your expectations?"
+- **Offer Architectural Options with Trade-offs**: Never say "We must use Redis." Say: "We have two options: Memcached for pure multi-threaded throughput, or Redis for rich data structures like Sorted Sets. Given our need to rank feeds by timestamp, Redis is the superior choice."
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Navigating Interviewer Pushback
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+When an interviewer interrupts with: *"What if that database node crashes?"*
+1. **Acknowledge and Validate**: "Great question. If that primary node crashes..."
+2. **State Immediate Impact**: "Writes to that shard will fail for ~10-30 seconds until failover completes."
+3. **Propose Automated Mitigation**: "We will configure automated Raft consensus failover to promote a replica to primary and notify the API Gateway."
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. Key Takeaways
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define navigating ambiguity and whiteboard communication strategies.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does navigating ambiguity and whiteboard communication strategies impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing navigating ambiguity and whiteboard communication strategies?
-3. How do you scale navigating ambiguity and whiteboard communication strategies under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Clarify ambiguous requirements proactively before proposing solutions.
+- Frame all technology choices in terms of concrete trade-offs (pros vs cons).
+- Treat the interview as a collaborative architectural whiteboard session.

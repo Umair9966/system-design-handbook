@@ -1,53 +1,73 @@
-# UML Modeling: Class Diagrams and Sequence Diagrams
+# UML Diagrams: Class and Sequence Diagrams
 
-> **Summary**: Mastering standard UML notation: Association, Aggregation, Composition, Inheritance, and Interface Realization.
-> Provides Mermaid syntax guidelines for producing readable class hierarchies and message sequence flows.
+Unified Modeling Language (UML) provides standard visual notations for modeling software structure and runtime interaction workflows.
+
+```mermaid
+classDiagram
+    class User {
+        -String id
+        -String email
+        +login() bool
+    }
+    class Order {
+        -String orderId
+        -Double total
+        +addItem(Item item) void
+    }
+    class Item {
+        -String sku
+        -Double price
+    }
+    User "1" --> "*" Order : places
+    Order "1" *-- "*" Item : contains
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of uml modeling: class diagrams and sequence diagrams.
+## 1. Class Diagram Relationships
 
-## Why It Matters
-TBD: The operational and engineering problems uml modeling: class diagrams and sequence diagrams solves at scale.
+| Notation | Relationship | Meaning | Example |
+| :--- | :--- | :--- | :--- |
+| `-->` | **Association** | One class uses or references another | `User` uses `PaymentService` |
+| `--*` | **Composition** | Strong "part-of" whole; lifetime bound | `Order` owns `LineItems` (if order dies, items die) |
+| `--o` | **Aggregation** | Weak "has-a" relationship; independent life | `Department` has `Employees` (employees survive) |
+| `..|>` | **Realization** | Class implements an interface | `PostgresRepo` implements `Repository` |
+| `--|>` | **Inheritance** | Class extends a parent class | `CreditCard` extends `PaymentMethod` |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Sequence Diagrams: Runtime Interactions
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Sequence diagrams depict object lifecycles, method invocations, and synchronous vs asynchronous message passing:
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Customer
+    participant CheckoutCtrl as CheckoutController
+    participant OrderSvc as OrderService
+    participant PayGateway as PaymentGateway
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+    Customer->>CheckoutCtrl: POST /checkout (Items, Card)
+    activate CheckoutCtrl
+    CheckoutCtrl->>OrderSvc: CreateOrder(Items)
+    activate OrderSvc
+    OrderSvc-->>CheckoutCtrl: Order(id="123", status=PENDING)
+    deactivate OrderSvc
+    
+    CheckoutCtrl->>PayGateway: Charge(Card, Total)
+    activate PayGateway
+    PayGateway-->>CheckoutCtrl: ChargeResult(SUCCESS)
+    deactivate PayGateway
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+    CheckoutCtrl-->>Customer: 200 OK (Order Confirmed)
+    deactivate CheckoutCtrl
+```
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+---
 
-## Key Takeaways
-- Foundational architectural trade-offs define uml modeling: class diagrams and sequence diagrams.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+## 3. Key Takeaways
 
-## Common Interview Questions
-1. How does uml modeling: class diagrams and sequence diagrams impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing uml modeling: class diagrams and sequence diagrams?
-3. How do you scale uml modeling: class diagrams and sequence diagrams under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Class diagrams visualize static system structure and dependency coupling.
+- Sequence diagrams capture runtime execution flow, call hierarchy, and message ordering.
+- Use Composition over Aggregation when the child entity cannot exist without the parent container.

@@ -1,80 +1,50 @@
-# Design a Centralized Log Aggregation and Analytics System (ELK)
+# Design a Distributed Log Aggregation System (ELK / Loki)
 
-> **System Scope**: Petabyte-scale log ingestion and querying architecture collecting unstructured and structured logs across thousands of servers.
-> Employs lightweight log forwarders, Kafka ingest buffering, distributed indexing clusters, and cold storage lifecycle policies.
+A high-throughput distributed log collection, indexing, and search architecture capable of ingesting tens of terabytes of log data daily across thousands of microservice containers with near real-time searchability.
+
+```mermaid
+graph TD
+    AppPods[Application Containers: Pods 1..N] -->|stdout / stderr| Daemon[Fluentbit / Vector DaemonSet]
+    Daemon -->|HTTP / OTLP Batch| Kafka[Kafka Log Stream]
+    
+    Kafka --> LogIngester[Log Ingestion Worker Pool]
+    LogIngester --> S3[(Object Store: Raw Log Chunks S3)]
+    LogIngester --> Indexer[(Distributed Indexer: Loki / OpenSearch)]
+    
+    Grafana[Grafana / OpenSearch Dashboards] --> Indexer
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a centralized log aggregation and analytics system (elk) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a centralized log aggregation and analytics system (elk).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Ingest logs from thousands of distributed application servers.
+2. Support structured JSON and unstructured text parsing.
+3. Full-text search with regex and label filtering (`app=order AND level=ERROR`).
+4. Automated retention and lifecycle tiering (purge after 30 days).
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Zero Loss of Critical Logs**: Buffered against network partitions.
+- **Cost Efficiency**: Minimize indexing storage overhead (Grafana Loki approach).
+- **Search Latency**: Sub-second search for recent 1-hour logs.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. OpenSearch vs Grafana Loki: The Indexing Trade-off
 
-## 4. API Design
-```http
-POST /api/v1/a-centralized-log-aggregation-and-analytics-system-(elk)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+| Dimension | OpenSearch / Elasticsearch | Grafana Loki |
+| :--- | :--- | :--- |
+| **Indexing Strategy** | Full-text Inverted Index on every word | **Indexes metadata labels ONLY**; greps compressed chunks |
+| **Index Size** | 100% - 150% of raw data size | **< 5% of raw data size** |
+| **Storage Backend** | Costly local NVMe disks | Direct cheap **AWS S3 Object Storage** |
+| **Ingestion Speed** | Moderate (heavy CPU for indexing) | Blazing fast (just writes compressed chunks) |
+| **Best For** | Ad-hoc text search across billions of docs | High-volume Kubernetes container logs |
 
-{
-  "request_payload": "value"
-}
-```
+---
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+## 3. Key Takeaways
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Centralized Log Aggregation and Analytics System (ELK) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
-
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
-
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
-
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use lightweight agents (Vector / Fluentbit) as DaemonSets on every Kubernetes node.
+- Buffer incoming log streams via Kafka to prevent log drops during traffic surges.
+- Choose Loki's label-only indexing pattern to cut log storage infrastructure costs by 80%.

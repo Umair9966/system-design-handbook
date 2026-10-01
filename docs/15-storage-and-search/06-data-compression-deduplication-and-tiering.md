@@ -1,53 +1,43 @@
 # Data Compression, Deduplication, and Lifecycle Tiering
 
-> **Summary**: Examines storage optimization techniques: compression algorithms (Zstandard, Snappy, Gzip) and chunk deduplication.
-> Details automated object lifecycle policies transitioning data from Hot tiers to Warm and Cold Glacier archives.
+Managing petabyte-scale storage economically requires combining byte-level data compression, block-level deduplication, and automated lifecycle storage tiering.
+
+```mermaid
+graph LR
+    Hot[Hot Tier: NVMe SSD / S3 Standard<br/>$0.023/GB | Sub-10ms Access]
+    Warm[Warm Tier: HDD / S3 Infrequent Access<br/>$0.0125/GB | 50ms Access]
+    Cold[Cold Tier: S3 Glacier Flexible<br/>$0.0036/GB | 3-5 Hours Retrieval]
+    Archive[Deep Archive: S3 Glacier Deep<br/>$0.00099/GB | 12 Hours Retrieval]
+
+    Hot -->|After 30 Days of Zero Reads| Warm
+    Warm -->|After 90 Days| Cold
+    Cold -->|After 365 Days| Archive
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of data compression, deduplication, and lifecycle tiering.
+## 1. Modern Compression Algorithms
 
-## Why It Matters
-TBD: The operational and engineering problems data compression, deduplication, and lifecycle tiering solves at scale.
+| Algorithm | Compression Ratio | Compression Speed | Decompression Speed | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **Zstandard (Zstd)** | Very High | Fast (Tunable levels 1-22) | Ultra-Fast (~1.2 GB/s) | Modern general default, Kafka topics, Parquet |
+| **Snappy / LZ4** | Moderate | Blazing Fast (~500 MB/s) | Blazing Fast (~2 GB/s) | Real-time RPC payloads, LSM-tree block stores |
+| **Gzip (DEFLATE)** | High | Slow | Moderate | Legacy HTTP assets, static web content |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Block-Level Data Deduplication
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Backup systems and storage arrays (Pure Storage, NetApp) eliminate duplicate blocks:
+1. Divide incoming streams into chunks (e.g., variable-length Rabin fingerprinting).
+2. Hash chunk content: $	ext{Hash} = 	ext{SHA-256}(	ext{Chunk})$.
+3. Check index: If hash exists, increment reference pointer and discard duplicate bytes.
+4. Typical deduplication ratio in enterprise backup systems: **10:1 to 30:1** storage savings!
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. Key Takeaways
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define data compression, deduplication, and lifecycle tiering.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does data compression, deduplication, and lifecycle tiering impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing data compression, deduplication, and lifecycle tiering?
-3. How do you scale data compression, deduplication, and lifecycle tiering under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Standardize on **Zstandard (Zstd)** for high compression ratios with sub-millisecond decompression speed.
+- Implement automated S3 Lifecycle policies to push cold data to Glacier Deep Archive, slashing storage bills by up to 95%.
+- Employ variable-length chunk deduplication for disk backup and volume snapshot systems.

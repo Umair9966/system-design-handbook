@@ -1,53 +1,73 @@
-# Full-Text Search and Inverted Indexes (Elasticsearch Concepts)
+# Full-Text Search and Inverted Indexes
 
-> **Summary**: Explains search engine internals: text tokenization, lowercase filters, stemming algorithms, and stop word removal.
-> Details Inverted Index data structures, TF-IDF and BM25 relevance ranking, and distributed Lucene shard routing.
+Relational databases use B+Tree indexes, which fail on text search queries containing wildcard substrings (`WHERE text LIKE '%system%'`) because they require full sequential table scans. Search engines (Elasticsearch, OpenSearch) solve this using **Inverted Indexes**.
+
+```mermaid
+graph TD
+    Doc1["Doc 1: 'Distributed systems are scalable'"]
+    Doc2["Doc 2: 'Scalable systems require monitoring'"]
+
+    subgraph Text Analysis Pipeline
+        Tokenize[Tokenizer: Lowercase & Split words]
+        Filter[Filter: Remove Stop Words ('are')]
+        Stem[Stemming: 'scalable' -> 'scale']
+    end
+
+    Doc1 --> Tokenize
+    Doc2 --> Tokenize
+    Tokenize --> Filter --> Stem --> InvertedIndex
+
+    subgraph "Inverted Index (Posting Lists)"
+        Term1["'distribut' -> [Doc 1]"]
+        Term2["'scale'      -> [Doc 1, Doc 2]"]
+        Term3["'system'     -> [Doc 1, Doc 2]"]
+        Term4["'monitor'    -> [Doc 2]"]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of full-text search and inverted indexes (elasticsearch concepts).
+## 1. Anatomy of an Inverted Index
 
-## Why It Matters
-TBD: The operational and engineering problems full-text search and inverted indexes (elasticsearch concepts) solves at scale.
+An Inverted Index maps every unique word (term) to a sorted list of document IDs where it appears (the **Posting List**):
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### Fast Boolean Queries:
+To execute: `scale AND monitor`:
+1. Fetch posting list for `scale`: `[Doc 1, Doc 2]`
+2. Fetch posting list for `monitor`: `[Doc 2]`
+3. Compute intersection using two-pointer scan: $\implies \mathbf{[Doc 2]}$ (Sub-millisecond execution over millions of docs!).
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Relevance Scoring: TF-IDF vs BM25
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+Modern search engines rank documents using **BM25 (Best Matching 25)**:
+- **Term Frequency (TF)**: How often does the word appear in this document? (With saturation to prevent keyword stuffing).
+- **Inverse Document Frequency (IDF)**: How rare is this word across all documents? Rare words ("Kubernetes") carry vastly more weight than common words ("computer").
+- **Document Length Normalization**: Shorter documents matching the term receive higher ranking than long documents.
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Elasticsearch Distributed Architecture
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```mermaid
+graph TD
+    Index[Index: 'products' - 3 Shards, 1 Replica]
+    Index --> P0[Primary Shard 0]
+    Index --> P1[Primary Shard 1]
+    Index --> P2[Primary Shard 2]
+    P0 -.->|Replicated| R0[Replica Shard 0]
+    P1 -.->|Replicated| R1[Replica Shard 1]
+    P2 -.->|Replicated| R2[Replica Shard 2]
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define full-text search and inverted indexes (elasticsearch concepts).
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+- **Query Phase**: The coordinating node broadcasts the search query to all shards (primary or replica). Each shard computes local BM25 top-K results.
+- **Fetch Phase**: Coordinating node merges priority queues, requests full document sources for the top $K$, and returns to client.
 
-## Common Interview Questions
-1. How does full-text search and inverted indexes (elasticsearch concepts) impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing full-text search and inverted indexes (elasticsearch concepts)?
-3. How do you scale full-text search and inverted indexes (elasticsearch concepts) under 10x traffic spikes?
+---
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+## 4. Key Takeaways
+
+- Inverted indexes turn text search from an $O(N)$ full table scan into an $O(1)$ dictionary lookup and posting list intersection.
+- Use BM25 scoring for human-like relevance ranking.
+- Synchronize search engines with relational databases asynchronously using CDC (Debezium) to prevent dual-write inconsistencies.

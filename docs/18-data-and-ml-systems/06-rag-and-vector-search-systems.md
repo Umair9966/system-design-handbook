@@ -1,53 +1,54 @@
-# Retrieval-Augmented Generation (RAG) and Vector Search Architecture
+# Retrieval-Augmented Generation (RAG) and Vector Search Systems
 
-> **Summary**: Architecting scalable RAG pipelines connecting LLMs to external enterprise knowledge repositories.
-> Details document chunking, embedding generation, vector indexing (HNSW), semantic similarity search, and context assembly.
+Retrieval-Augmented Generation (RAG) grounds Large Language Models (LLMs) with dynamic, proprietary, or private external knowledge, eliminating hallucinations and enabling real-time factual accuracy without expensive fine-tuning.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as End User
+    participant App as Orchestrator / LangChain
+    participant Embed as Embedding Model (Text-Embedding-3)
+    participant VectorDB as Vector DB (Pinecone / Milvus / Qdrant)
+    participant LLM as Frontier LLM (Gemini 1.5 / Claude)
+
+    User->>App: "What is our company's refund policy for damaged goods?"
+    App->>Embed: Embed query string into 1536-dim vector
+    Embed-->>App: Returns query vector [0.023, -0.412, ...]
+    App->>VectorDB: ANN Search(query_vector, Top_K=3, Cosine Similarity)
+    VectorDB-->>App: Returns relevant policy chunk documents
+    Note over App: Constructs Augmented Prompt:<br/>"Context: {chunks}<br/>Question: {query}<br/>Answer strictly based on Context."
+    App->>LLM: Generates grounded response
+    LLM-->>App: Factual, hallucination-free answer with citations
+    App-->>User: Delivers response
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of retrieval-augmented generation (rag) and vector search architecture.
+## 1. Document Ingestion Pipeline
 
-## Why It Matters
-TBD: The operational and engineering problems retrieval-augmented generation (rag) and vector search architecture solves at scale.
+```mermaid
+graph LR
+    Docs[Raw PDFs / Wiki / Confluence] --> Chunk[Document Chunker: 500 tokens + 50 overlap]
+    Chunk --> Embed[Embedding Model]
+    Embed --> Store[(Vector DB: HNSW Index)]
+```
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### Chunking Strategies:
+- **Fixed Size with Overlap**: 500 tokens with 50-token overlap preserves context across boundaries.
+- **Semantic / Document Structure**: Chunk by Markdown headers (`#`, `##`) or sentence boundaries.
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Advanced RAG Techniques
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+1. **Hybrid Search (Dense + Sparse)**: Combines dense vector semantic similarity with traditional sparse keyword BM25 search via Reciprocal Rank Fusion (RRF).
+2. **Re-Ranking (Cross-Encoder)**: Run top-20 retrieved chunks through a Cohere/BGE cross-encoder model to score relevance before sending the top 5 to the LLM.
+3. **Hypothetical Document Embeddings (HyDE)**: The LLM generates a hypothetical answer to the query first; that hypothetical answer is embedded to find real matching documents.
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define retrieval-augmented generation (rag) and vector search architecture.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does retrieval-augmented generation (rag) and vector search architecture impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing retrieval-augmented generation (rag) and vector search architecture?
-3. How do you scale retrieval-augmented generation (rag) and vector search architecture under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Chunk documents intelligently with semantic boundaries and overlaps.
+- Combine vector search with BM25 keyword search (Hybrid Search) to ensure exact keyword and part-number matches.
+- Use cross-encoder re-rankers to maximize context relevance while minimizing expensive LLM prompt token costs.

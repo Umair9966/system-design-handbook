@@ -1,53 +1,54 @@
-# Data Pipelines: ETL vs ELT Architecture
+# Data Pipelines: ETL vs ELT
 
-> **Summary**: Compares traditional Extract-Transform-Load with modern cloud-scale Extract-Load-Transform paradigms.
-> Details workflow orchestrators (Apache Airflow, Dagster), DAG dependencies, idempotent backfilling, and data lineage.
+Data integration pipelines extract raw data from operational databases, transform it into business models, and load it into analytical engines.
+
+```mermaid
+graph TD
+    subgraph "ETL (Extract, Transform, Load - Legacy On-Prem)"
+        Sources1[OLTP DBs & Logs] --> Extract1[Extract Raw Data]
+        Extract1 --> Transform1[Compute Engine / Spark: Transform & Clean]
+        Transform1 --> Load1[Load Structured Tables into Data Warehouse]
+    end
+
+    subgraph "ELT (Extract, Load, Transform - Modern Cloud)"
+        Sources2[OLTP DBs & Logs] --> Extract2[Extract Raw Data (Fivetran / Airbyte)]
+        Extract2 --> Load2[Load RAW Data directly into Cloud Warehouse (Snowflake / BigQuery)]
+        Load2 --> Transform2[Transform inside Warehouse using SQL & dbt (Scalable Compute!)]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of data pipelines: etl vs elt architecture.
+## 1. Comparing ETL and ELT
 
-## Why It Matters
-TBD: The operational and engineering problems data pipelines: etl vs elt architecture solves at scale.
-
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
-
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Dimension | ETL (Extract, Transform, Load) | ELT (Extract, Load, Transform) |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Compute Engine** | Dedicated external cluster (Apache Spark, Databricks) | Cloud Data Warehouse (Snowflake, BigQuery, Redshift) |
+| **Raw Data Retention**| Raw data often discarded after transformation | Raw data preserved indefinitely in raw warehouse schemas |
+| **Pipeline Flexibility**| Low: Schema changes require altering pipeline code | High: Re-run SQL models with dbt on preserved raw data |
+| **Transformation Tool**| Python, Scala, Java Spark jobs | Declarative SQL models via dbt |
+| **Ingestion Speed** | Slower (bottlenecked by transformation stage) | Blazing fast (dump raw files directly) |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 2. Modern ELT with dbt (data build tool)
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+In modern data stacks, **dbt** manages transformations inside the cloud data warehouse:
+- Declarative SQL `SELECT` statements compiled into database tables or views.
+- Automated lineage Directed Acyclic Graphs (DAGs).
+- Native schema tests (`unique`, `not_null`, foreign key assertions).
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```mermaid
+graph LR
+    Raw[Raw Table: raw_stripe.charges] --> Model1[stg_stripe__payments.sql]
+    Model1 --> Fact[fct_orders.sql (Clean Dimension/Fact)]
+    Fact --> Mart[mart_finance_revenue.sql]
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define data pipelines: etl vs elt architecture.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+---
 
-## Common Interview Questions
-1. How does data pipelines: etl vs elt architecture impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing data pipelines: etl vs elt architecture?
-3. How do you scale data pipelines: etl vs elt architecture under 10x traffic spikes?
+## 3. Key Takeaways
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Default to ELT using Cloud Data Warehouses and dbt for analytical pipelines.
+- Reserve ETL for real-time streaming transformations or when strict compliance prohibits storing raw PII data in warehouses.
+- Version control all SQL transformations and enforce automated data tests in CI.

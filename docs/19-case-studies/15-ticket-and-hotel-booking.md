@@ -1,80 +1,86 @@
-# Design a High-Contention Booking and Reservation System
+# Design a Ticket and Hotel Booking System (Ticketmaster / Airbnb)
 
-> **System Scope**: Ticketmaster and hotel reservation architecture handling extreme concurrency and zero tolerance for double-booking.
-> Implements distributed locking, temporary seat holds with TTL expirations, and strict ACID transaction checkout guarantees.
+A high-concurrency reservation platform capable of handling extreme flash-sale traffic spikes (Taylor Swift concert sales) without double-booking, ensuring fair allocation and transactional seat locks.
+
+```mermaid
+graph TD
+    Client[User Browser] --> QueueRoom[Virtual Waiting Room / Cloudflare Waiting Room]
+    QueueRoom --> LB[Load Balancer]
+    LB --> BookingAPI[Booking Service]
+    
+    BookingAPI --> LockStore[(Redis: Distributed Seat Leases / Redlock)]
+    BookingAPI --> BookingDB[(Relational DB: PostgreSQL ACID)]
+    BookingAPI --> PayGateway[Payment Gateway]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a high-contention booking and reservation system supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a high-contention booking and reservation system.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Search events / hotels by location, date, and category.
+2. View seat map / room availability in real time.
+3. Temporary hold / reservation lock: Hold seat for 10 minutes while user enters payment details.
+4. Process payment and issue digital ticket.
+5. Auto-release seats if 10-minute payment countdown expires.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Strict Consistency**: **ZERO DOUBLE BOOKING**. Two users must never be sold the same seat.
+- **Extreme Burst Scalability**: Handle 100,000+ users clicking "Reserve" at the exact same second.
+- **Fairness**: Virtual waiting room queuing to prevent bot scalpers.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Preventing Double-Booking: The Distributed Seat Lease Pattern
 
-## 4. API Design
-```http
-POST /api/v1/a-high-contention-booking-and-reservation-system
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a High-Contention Booking and Reservation System Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+sequenceDiagram
+    autonumber
+    participant User as Customer
+    participant API as Booking Service
+    participant Redis as Redis Lock Store
+    participant DB as Postgres DB
+
+    User->>API: POST /seats/A-12/hold (UserId: 42)
+    Note over API: Atomic Redis SET with NX and EX:
+    API->>Redis: SET seat:concert_99:A12 "user_42" NX EX 600
+    alt Lock Acquired (Returns OK)
+        Redis-->>API: 1 (Success)
+        API->>DB: INSERT INTO seat_holds (seat_id, user_id, expires_at)
+        API-->>User: 200 OK: Seat held for 10 minutes!
+    else Seat Already Held (Returns nil)
+        Redis-->>API: 0 (Key already exists)
+        API-->>User: 409 Conflict: Seat currently held by another user
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. Database Schema (PostgreSQL with Row Locks)
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+```sql
+CREATE TABLE seats (
+    seat_id VARCHAR(32) PRIMARY KEY,
+    event_id UUID NOT NULL,
+    section VARCHAR(16),
+    row_num VARCHAR(8),
+    seat_num VARCHAR(8),
+    status VARCHAR(16) NOT NULL DEFAULT 'AVAILABLE', -- 'AVAILABLE', 'HELD', 'BOOKED'
+    version INT NOT NULL DEFAULT 0 -- Optimistic Concurrency Control
+);
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+-- Finalizing booking with Optimistic Locking:
+UPDATE seats 
+SET status = 'BOOKED', version = version + 1 
+WHERE seat_id = 'A-12' 
+  AND status = 'HELD' 
+  AND version = :expected_version;
+```
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use a Virtual Waiting Room at the edge (Cloudflare) to smooth million-user flash bursts.
+- Implement distributed seat leases in Redis using atomic `SET ... NX EX 600` (10-minute hold).
+- Enforce strict ACID consistency at the database layer with Optimistic Concurrency Control (`version` column).

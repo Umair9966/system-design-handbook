@@ -1,80 +1,53 @@
-# Design a High-Throughput Cloud-Native API Gateway
+# Design a High-Performance API Gateway (Kong / Envoy)
 
-> **System Scope**: Central entry point for microservice ecosystems handling millions of requests per second.
-> Details SSL termination, JWT authentication verification, token bucket rate limiting, request routing, and OpenTelemetry instrumentation.
+A high-throughput L7 API Gateway sitting at the perimeter of a microservices architecture, providing SSL termination, authentication, rate limiting, request transformation, and dynamic routing.
+
+```mermaid
+graph TD
+    Client[Mobile / Web Clients] --> Edge[Edge Anycast]
+    Edge --> GW[Envoy / Kong API Gateway Cluster]
+    
+    subgraph Gateway Filter Pipeline
+        GW --> F1[1. TLS 1.3 Termination & WAF]
+        F1 --> F2[2. JWT Authentication & Claims Extraction]
+        F2 --> F3[3. Rate Limiter (Redis Token Bucket)]
+        F3 --> F4[4. Path Rewriting & Header Injection]
+    end
+
+    F4 --> SvcA[Order Microservice]
+    F4 --> SvcB[User Microservice]
+    F4 --> SvcC[Payment Microservice]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a high-throughput cloud-native api gateway supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a high-throughput cloud-native api gateway.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Dynamic routing based on URI path, headers, and HTTP methods.
+2. Centralized Authentication (validate JWTs, verify signatures).
+3. Distributed Rate Limiting and quota management.
+4. Observability: Generate unified access logs, Prometheus metrics, and distributed trace headers (`traceparent`).
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Ultra-High Throughput**: 100,000+ requests per second per node.
+- **Minimal Latency Overhead**: Gateway processing overhead $< 2	ext{ms}$.
+- **Zero-Downtime Dynamic Configuration**: Reload routes via xDS API without restarting worker processes.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. The Envoy Proxy xDS Control Plane
 
-## 4. API Design
-```http
-POST /api/v1/a-high-throughput-cloud-native-api-gateway
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Modern API Gateways (Envoy) decouple the data plane from the control plane using the **xDS protocol**:
+- **LDS (Listener Discovery Service)**: Dynamic port and TLS configuration.
+- **RDS (Route Discovery Service)**: Dynamic URI routing rules.
+- **CDS (Cluster Discovery Service)**: Backend service endpoints and health states.
+- **EDS (Endpoint Discovery Service)**: Real-time Kubernetes pod IP updates.
 
-{
-  "request_payload": "value"
-}
-```
+---
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+## 3. Key Takeaways
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a High-Throughput Cloud-Native API Gateway Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
-
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
-
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
-
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Terminate TLS and authenticate JWTs at the gateway to offload CPU from downstream microservices.
+- Inject trusted identity headers (`X-User-Id`, `X-User-Roles`) into internal service requests.
+- Use Envoy xDS APIs to dynamically update routes without dropping active TCP connections.

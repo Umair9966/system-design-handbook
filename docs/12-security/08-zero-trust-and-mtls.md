@@ -1,53 +1,59 @@
 # Zero Trust Architecture and Mutual TLS (mTLS)
 
-> **Summary**: Explains shifting from perimeter security ('castle and moat') to Zero Trust: 'never trust, always verify'.
-> Details micro-segmentation, workload cryptographic identities (SPIFFE/SPIRE), and mTLS inside service meshes.
+Traditional perimeter security ("Castle and Moat") assumes that anything inside the internal corporate or cloud network is trusted. Zero Trust replaces this with: **"Never trust, always verify."**
+
+```mermaid
+graph TD
+    subgraph "Legacy Castle-and-Moat (Vulnerable)"
+        Hacker[Attacker breaches VPN / Perimeter] --> Net[Internal Flat Network]
+        Net --> S1[Service A: Unencrypted HTTP]
+        Net --> S2[Service B: Unauthenticated DB]
+        Note over Net: Attacker moves laterally across all systems!
+    end
+
+    subgraph "Zero Trust Architecture"
+        Client1[Service A] -->|mTLS + SPIFFE Identity Check| Srv1[Service B]
+        Note over Srv1: Every single packet is encrypted and mutually authenticated!
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of zero trust architecture and mutual tls (mtls).
+## 1. The Core Tenets of Zero Trust
 
-## Why It Matters
-TBD: The operational and engineering problems zero trust architecture and mutual tls (mtls) solves at scale.
+1. **Verify Explicitly**: Authenticate and authorize based on all available data points (identity, location, device health, service credentials).
+2. **Least Privilege Access**: Grant access with Just-In-Time (JIT) and Just-Enough-Access (JEA) policies.
+3. **Assume Breach**: Minimize blast radius by segmenting networks, encrypting all traffic internally, and continuously monitoring telemetry.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Mutual TLS (mTLS) Deep Dive
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+In standard HTTPS, only the server proves its identity with an X.509 certificate. In **Mutual TLS (mTLS)**, both the client and server present and verify certificates:
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Client Microservice (Envoy)
+    participant CA as Internal CA (Vault / Istio Citadel)
+    participant Server as Server Microservice (Envoy)
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+    Client->>CA: Requests short-lived cert with SPIFFE ID: spiffe://cluster/ns/prod/sa/order-service
+    Server->>CA: Requests short-lived cert with SPIFFE ID: spiffe://cluster/ns/prod/sa/payment-service
+    
+    Client->>Server: ClientHello
+    Server-->>Client: ServerHello + Server Certificate
+    Client->>Client: Verifies Server Cert against Root CA
+    Server->>Client: CertificateRequest
+    Client-->>Server: Client Certificate
+    Server->>Server: Verifies Client Cert + Checks SPIFFE ID in authorization policy
+    Note over Client,Server: Mutual Trust Established -> Encrypted TLS 1.3 Channel
+```
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+---
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+## 3. Key Takeaways
 
-## Key Takeaways
-- Foundational architectural trade-offs define zero trust architecture and mutual tls (mtls).
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does zero trust architecture and mutual tls (mtls) impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing zero trust architecture and mutual tls (mtls)?
-3. How do you scale zero trust architecture and mutual tls (mtls) under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Perimeter-only security is obsolete; internal networks must be assumed compromised.
+- Implement mTLS via service meshes (Istio, Linkerd) to automate certificate rotation and encryption without touching application code.
+- Enforce authorization policies based on cryptographic identities (SPIFFE/SPIRE).

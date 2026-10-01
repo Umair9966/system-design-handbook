@@ -1,53 +1,122 @@
-# Hexagonal Architecture and Clean Architecture
+# Hexagonal and Clean Architecture (Ports and Adapters)
 
-> **Summary**: Details Ports and Adapters architecture: decoupling core business logic from database, UI, and external frameworks.
-> Explains Dependency Inversion, domain isolation, testability without mocks, and maintainability over decades.
+Hexagonal Architecture (introduced by Alistair Cockburn) and Clean Architecture (Uncle Bob Martin) organize software systems such that business rules remain completely decoupled from databases, frameworks, transport protocols, and UI.
+
+```mermaid
+graph TD
+    subgraph "External Adapters (Infrastructure Layer)"
+        REST[REST Controller]
+        CLI[CLI Command]
+        KafkaConsumer[Kafka Consumer]
+        Postgres[Postgres Repository]
+        S3[S3 Storage Adapter]
+        SendGrid[SendGrid Email Adapter]
+    end
+
+    subgraph "Ports (Interface Boundaries)"
+        InPort1[Inbound Port: PlaceOrderUseCase]
+        OutPort1[Outbound Port: OrderRepository]
+        OutPort2[Outbound Port: PaymentGateway]
+        OutPort3[Outbound Port: NotificationSender]
+    end
+
+    subgraph "Domain Core (Pure Business Logic - Zero External Dependencies)"
+        Entities[Domain Entities: Order, LineItem, Money]
+        Logic[Business Validation & Rules]
+    end
+
+    REST --> InPort1
+    CLI --> InPort1
+    KafkaConsumer --> InPort1
+
+    InPort1 --> Logic
+    Logic --> Entities
+
+    Logic --> OutPort1
+    Logic --> OutPort2
+    Logic --> OutPort3
+
+    Postgres -.->|Implements| OutPort1
+    S3 -.->|Implements| OutPort2
+    SendGrid -.->|Implements| OutPort3
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of hexagonal architecture and clean architecture.
+## 1. The Dependency Inversion Principle (DIP)
 
-## Why It Matters
-TBD: The operational and engineering problems hexagonal architecture and clean architecture solves at scale.
+The core tenet of Clean Architecture is: **Dependencies must point inward toward high-level business rules**. 
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+```mermaid
+graph LR
+    subgraph Traditional Layered Architecture (Tightly Coupled)
+        UI[UI Layer] --> BLL[Business Logic]
+        BLL --> DAL[Data Access / DB (Downstream!)]
+    end
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+    subgraph Clean Architecture (Inverted)
+        CleanBLL[Core Business Logic] --> PortInterface[Repository Interface (Port)]
+        ConcreteRepo[Postgres Implementation] -.->|Implements / Inverts| PortInterface
+    end
+```
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+In Clean Architecture, your core domain knows nothing about SQL, ORMs (Hibernate, Prisma), AWS SDKs, or HTTP libraries. The database is a trivial plugin.
+
+---
+
+## 2. Ports and Adapters in Code
+
+### 1. The Port (Core Domain Interface)
+```go
+package domain
+
+type OrderRepository interface {
+    Save(order *Order) error
+    FindByID(id string) (*Order, error)
+}
+```
+
+### 2. The Use Case (Application Service)
+```go
+type PlaceOrderUseCase struct {
+    repo OrderRepository // Injected interface
+}
+
+func (uc *PlaceOrderUseCase) Execute(cmd PlaceOrderCommand) error {
+    order := NewOrder(cmd.CustomerID, cmd.Items)
+    return uc.repo.Save(order)
+}
+```
+
+### 3. The Adapter (Infrastructure Implementation)
+```go
+package postgres
+
+type PostgresOrderRepository struct {
+    db *sql.DB
+}
+
+func (r *PostgresOrderRepository) Save(order *domain.Order) error {
+    _, err := r.db.Exec("INSERT INTO orders (id, customer_id) VALUES ($1, $2)", order.ID, order.CustomerID)
+    return err
+}
+```
+
+---
+
+## 3. Benefits and Trade-offs
+
+| Dimension | Clean / Hexagonal Architecture | Traditional Layered Architecture |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Testability** | 100% pure in-memory unit tests with zero DB mocks | Requires spinning up Docker / test DBs |
+| **Framework Independence** | Upgrade framework or DB with zero domain changes | Framework upgrades break business logic |
+| **Boilerplate & Files** | Higher (requires DTO mappers, interfaces, adapters) | Lower initial setup |
+| **Cognitive Load** | High for junior developers | Low (everyone writes in controllers/services) |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 4. Key Takeaways
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define hexagonal architecture and clean architecture.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does hexagonal architecture and clean architecture impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing hexagonal architecture and clean architecture?
-3. How do you scale hexagonal architecture and clean architecture under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Protect your domain model from database schemas and external API shapes.
+- Use Inbound Ports for driving operations (HTTP, CLI, Kafka) and Outbound Ports for driven operations (DB, SMTP, S3).
+- Swap persistence technologies or transport protocols without altering a single line of business validation logic.

@@ -1,53 +1,64 @@
-# Role-Based (RBAC) and Attribute-Based Access Control (ABAC)
+# Role-Based Access Control (RBAC) and Attribute-Based Access Control (ABAC)
 
-> **Summary**: Compares coarse-grained Role-Based Access Control against fine-grained Attribute-Based Access Control.
-> Details modern policy-as-code engines (Open Policy Agent - OPA, AWS Cedar) for centralized authorization decisions.
+Access control models dictate how systems grant or deny requests to resources based on identities, roles, and contextual attributes.
+
+```mermaid
+graph TD
+    subgraph "RBAC (Role-Based)"
+        User[User: Alice] --> Role[Role: Billing Admin]
+        Role --> P1[Perm: read:invoices]
+        Role --> P2[Perm: refund:invoices]
+    end
+
+    subgraph "ABAC (Attribute-Based Policy Engine)"
+        Context[Context: User, Resource, Time, Location] --> Engine{Policy Engine (OPA / Cedar)}
+        Engine -->|Rule: User.dept == Resource.dept AND Time between 9-17| Decision[ALLOW / DENY]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of role-based (rbac) and attribute-based access control (abac).
+## 1. RBAC vs ABAC Comparison
 
-## Why It Matters
-TBD: The operational and engineering problems role-based (rbac) and attribute-based access control (abac) solves at scale.
-
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
-
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Dimension | RBAC (Role-Based) | ABAC (Attribute-Based) |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Logic** | User $	o$ Role $	o$ Permission | Policy evaluates attributes dynamically |
+| **Complexity** | Simple, easy to model in relational tables | Complex, requires dedicated policy engine |
+| **Granularity** | Coarse-grained | Extremely fine-grained |
+| **Role Explosion** | High (e.g. `US_Billing_Editor_Weekend`) | Zero (attributes handle conditional rules) |
+| **Evaluation Performance**| Ultra-fast bitmask / lookup ($O(1)$) | Requires policy evaluation engine ($O(N)$) |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 2. Open Policy Agent (OPA) and Rego
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+Modern cloud-native systems decouple authorization logic from application code using OPA:
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```rego
+package authz
 
-## Key Takeaways
-- Foundational architectural trade-offs define role-based (rbac) and attribute-based access control (abac).
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+default allow = false
 
-## Common Interview Questions
-1. How does role-based (rbac) and attribute-based access control (abac) impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing role-based (rbac) and attribute-based access control (abac)?
-3. How do you scale role-based (rbac) and attribute-based access control (abac) under 10x traffic spikes?
+# Allow if user is an admin
+allow {
+    input.user.role == "admin"
+}
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+# Allow doctors to view patient records in their own department during business hours
+allow {
+    input.user.role == "doctor"
+    input.action == "read"
+    input.resource.type == "medical_record"
+    input.user.department == input.resource.department
+    input.request_time.hour >= 8
+    input.request_time.hour <= 18
+}
+```
+
+---
+
+## 3. Key Takeaways
+
+- Start with RBAC for early-stage and standard enterprise applications.
+- Graduate to ABAC or Policy-as-Code (OPA / AWS Cedar) when fine-grained, contextual, or multi-tenant attributes govern permissions.
+- Never hardcode permission checks into frontend code; backends must unconditionally validate every action.

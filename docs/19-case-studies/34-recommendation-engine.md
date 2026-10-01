@@ -1,80 +1,70 @@
-# Design a Personalized Recommendation Engine (Netflix/Spotify)
+# Design a Real-Time Recommendation Engine (TikTok / Netflix)
 
-> **System Scope**: Personalized content discovery system ranking millions of movies, songs, or products for users in real time.
-> Details candidate retrieval via approximate vector nearest neighbor search, two-tower neural network scoring, and bandit diversity.
+A large-scale machine learning recommendation architecture capable of surfacing personalized video and product recommendations from a catalog of hundreds of millions of items with sub-50ms inference latency.
+
+```mermaid
+graph TD
+    UserApp[User Opens Feed] --> RecGW[Recommendation API Gateway]
+    RecGW --> FeatureFetch[Real-Time Feature Service: Redis Online Store]
+    
+    RecGW --> CandidateRetriever[Stage 1: Candidate Generation / Retrieval<br/>Reduces 100M -> 2,000 Candidates<br/>Two-Tower Embeddings + Milvus Vector Search]
+    
+    CandidateRetriever --> HeavyRanker[Stage 2: Heavy Neural Ranking<br/>Reduces 2,000 -> 50 Items<br/>Deep Learning DLRM on GPU Cluster]
+    
+    HeavyRanker --> ReRanker[Stage 3: Business Logic & Diversity Filter<br/>Reduces 50 -> 10 Items<br/>Deduplication, freshness, sponsored inject]
+    
+    ReRanker --> UserApp
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a personalized recommendation engine (netflix/spotify) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a personalized recommendation engine (netflix/spotify).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Deliver personalized home feeds tailored to user interests and historical interactions.
+2. Incorporate real-time feedback (e.g., if user skips 3 dance videos in a row, update recommendations immediately).
+3. Promote diversity (do not show 10 consecutive videos from the same creator or genre).
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Low Latency**: End-to-end feed recommendation returned in $< 50	ext{ms}$.
+- **Scale**: 500 Million DAU.
+- **Freshness**: Incorporate new trending content within 15 minutes of upload.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. The Two-Tower Neural Network Model
 
-## 4. API Design
-```http
-POST /api/v1/a-personalized-recommendation-engine-(netflix/spotify)
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Personalized Recommendation Engine (Netflix/Spotify) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    subgraph "User Tower"
+        UserFeatures[User ID, Age, Country, Watch History] --> DenseUser[Dense Neural Layers]
+        DenseUser --> UserVector[128-dim User Embedding Vector: U]
+    end
+
+    subgraph "Item Tower (Precomputed Offline)"
+        ItemFeatures[Video ID, Creator, Tags, Audio Track] --> DenseItem[Dense Neural Layers]
+        DenseItem --> ItemVector[128-dim Item Embedding Vector: V]
+    end
+
+    UserVector <-->|Dot Product / Cosine Similarity: U · V| ItemVector
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+- **Offline Indexing**: Precompute 128-dimensional embedding vectors for all 100 Million videos and index them inside **Milvus / Qdrant** using an HNSW graph.
+- **Online Query**: Compute user vector in 2ms $	o$ Execute Approximate Nearest Neighbor (ANN) search over Milvus $\implies$ Return top 2,000 candidates in **8ms**!
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Real-Time Feature Ingestion (TikTok Secret)
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+Why does TikTok adapt to user preferences so rapidly?
+- As user watches a video, viewing percentage (e.g., watched 100% or skipped after 2s) is streamed via WebSockets to **Apache Flink**.
+- Flink updates the user's real-time interest profile inside **Redis** within 500ms.
+- Next feed swipe already reflects the updated interest vector!
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Divide recommendation into Candidate Retrieval (Two-Tower ANN search) and Heavy Ranking (Deep Learning).
+- Precompute item embeddings offline and store in vector databases (Milvus).
+- Stream live interaction signals to Redis to adapt recommendations within seconds.

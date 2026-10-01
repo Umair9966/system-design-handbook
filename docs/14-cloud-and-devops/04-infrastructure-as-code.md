@@ -1,53 +1,39 @@
-# Infrastructure as Code (IaC): Declarative vs Imperative
+# Infrastructure as Code (IaC): Terraform and GitOps
 
-> **Summary**: Explores managing cloud topology as version-controlled code using Terraform, OpenTofu, and Pulumi.
-> Details declarative state management, state locking, drift detection, and immutable infrastructure patterns.
+Infrastructure as Code (IaC) is the practice of provisioning and managing computing infrastructure using declarative configuration definitions rather than manual console clicks.
+
+```mermaid
+graph TD
+    Code[Terraform / OpenTofu HCL Code] --> Plan[terraform plan: Calculates Execution Graph]
+    Plan --> StateLock[Locks Remote State in S3 + DynamoDB]
+    StateLock --> Apply[terraform apply: Makes Cloud API Calls]
+    Apply --> Cloud[Provisions AWS VPC, RDS, EKS, IAM]
+    Apply --> StateUpdate[Updates terraform.tfstate]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of infrastructure as code (iac): declarative vs imperative.
+## 1. Declarative vs Imperative IaC
 
-## Why It Matters
-TBD: The operational and engineering problems infrastructure as code (iac): declarative vs imperative solves at scale.
-
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
-
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Dimension | Declarative (Terraform, Pulumi, CloudFormation) | Imperative (Bash, AWS CLI, Python SDK) |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Paradigm** | You declare **what** the final state should look like | You write step-by-step instructions on **how** to create it |
+| **Idempotency** | Native ($N$ executions yield identical state) | Requires manual checks and scripting logic |
+| **Drift Detection** | Automatic comparison of live cloud state vs code | Difficult / Manual |
+| **Dependency Graph**| Computes DAG automatically for parallel provisioning | Developer must order execution manually |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 2. State Management and Race Conditions
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+Terraform relies on a state file (`terraform.tfstate`) to map real-world cloud resources to code.
+- **Remote State**: Store state in remote object storage (AWS S3, GCS) with encryption at rest.
+- **State Locking**: Use a distributed lock (DynamoDB, Consul) to prevent two engineers or CI pipelines from running `apply` concurrently, which corrupts infrastructure state.
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+---
 
-## Key Takeaways
-- Foundational architectural trade-offs define infrastructure as code (iac): declarative vs imperative.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+## 3. Key Takeaways
 
-## Common Interview Questions
-1. How does infrastructure as code (iac): declarative vs imperative impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing infrastructure as code (iac): declarative vs imperative?
-3. How do you scale infrastructure as code (iac): declarative vs imperative under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Never click manually in cloud provider consoles for production resources; everything must be in IaC.
+- Keep Terraform modules small and decoupled to reduce blast radius and state-locking contention.
+- Store sensitive variables in secret vaults rather than plain text in Terraform repositories.

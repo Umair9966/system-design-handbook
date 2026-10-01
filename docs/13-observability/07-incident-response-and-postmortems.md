@@ -1,53 +1,37 @@
 # Incident Response and Blameless Postmortems
 
-> **Summary**: Structures incident management: Incident Commander role, communications leads, triage severity (SEV1-SEV4).
-> Details the blameless postmortem culture, root cause analysis via 5 Whys, and tracking preventative action items.
+Outages are inevitable in complex distributed systems. How organizations respond to incidents and learn from them separates resilient engineering teams from fragile ones.
+
+```mermaid
+graph LR
+    Detect[1. Detection & Paging] --> Triage[2. Triage & Incident Commander Assigned]
+    Triage --> Mitigate[3. Mitigation / Rollback / Failover]
+    Mitigate --> Resolve[4. Verification & Incident Resolved]
+    Resolve --> Postmortem[5. Blameless Postmortem & Corrective Actions]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of incident response and blameless postmortems.
+## 1. The Incident Command System (ICS) Roles
 
-## Why It Matters
-TBD: The operational and engineering problems incident response and blameless postmortems solves at scale.
+During a major Sev-1 outage, clear roles prevent chaotic parallel actions:
+- **Incident Commander (IC)**: Owns the incident. Directs the response, delegates investigation tasks, and has final authority on rollbacks or failovers. Does NOT write code or debug.
+- **Operations Lead**: Technical lead investigating logs, executing commands, and applying mitigations.
+- **Communications Lead**: Updates external status pages (Statuspage.io) and internal executive stakeholders every 15-30 minutes.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Principles of Blameless Postmortems
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Pioneered by John Allspaw and Google SRE:
+- **Assume Good Intent**: Engineers do not come to work to break production. Failures are systemic defects in tooling, guardrails, automated testing, or process.
+- **Eliminate "Human Error"**: If a command typo deleted production data, the root cause is not "operator typed wrong command"—the root cause is *lack of role-based confirmation guards or read-only staging tooling*.
+- **The "5 Whys" Technique**: Drill down past superficial symptoms to systemic flaws.
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. Key Takeaways
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define incident response and blameless postmortems.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does incident response and blameless postmortems impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing incident response and blameless postmortems?
-3. How do you scale incident response and blameless postmortems under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- First priority during an incident is **mitigation** (rollback, traffic shed, failover), not debugging root causes.
+- Conduct blameless postmortems within 48 hours of every major outage.
+- Track all postmortem action items in issue trackers with assigned owners and deadlines.

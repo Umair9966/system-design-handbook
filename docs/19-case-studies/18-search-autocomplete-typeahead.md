@@ -1,80 +1,64 @@
-# Design a Real-Time Search Autocomplete and Typeahead System
+# Design a Real-Time Search Autocomplete / Typeahead (Google Search)
 
-> **System Scope**: Ultra-low latency prefix suggestion service returning top-5 query completions within 20 milliseconds.
-> Implements prefix Trie data structures, offline MapReduce/Spark frequency computation, serialized caching, and CDN edge delivery.
+A low-latency search typeahead system capable of returning top 5 query suggestions within 30ms as a user types each keystroke into a search bar.
+
+```mermaid
+graph TD
+    User[User Types: 'sys...'] --> Edge[Edge CDN / Proxy]
+    Edge --> TypeaheadSvc[Typeahead Query Service]
+    TypeaheadSvc --> TrieCache[(In-Memory Distributed Trie Cluster)]
+    
+    LogStream[Search Logs: 1 Billion Queries/Day] --> Kafka[Kafka Query Log Stream]
+    Kafka --> Flink[Apache Flink / Spark Aggregator]
+    Flink --> TopKDB[(Aggregated Top-K Prefix Store)]
+    TopKDB --> TrieBuilder[Trie Builder Worker]
+    TrieBuilder --> TrieCache
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a real-time search autocomplete and typeahead system supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a real-time search autocomplete and typeahead system.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. As the user types, suggest the top 5 most popular completions matching the prefix.
+2. Update prefix rankings based on recent real-world query frequency.
+3. Spell check and typo tolerance for minor spelling mistakes.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Ultra-Low Latency**: Suggestions returned within $< 30	ext{ms}$ per keystroke.
+- **High Throughput**: 100,000+ keystroke queries per second.
+- **High Availability**: 99.99%.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Data Structure: Trie with Precomputed Top-K Nodes
 
-## 4. API Design
-```http
-POST /api/v1/a-real-time-search-autocomplete-and-typeahead-system
-Content-Type: application/json
-Idempotency-Key: <uuid>
+A standard Trie requires traversing all child branches to find top completions, resulting in slow $O(M)$ searches during query time.
 
-{
-  "request_payload": "value"
-}
-```
+### The Precomputed Trie Optimization:
+Store the precomputed top 5 search terms directly inside **every parent Trie node**:
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Real-Time Search Autocomplete and Typeahead System Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    Root["Root: ['system', 'sports', 'star', 'stripe']"]
+    Root --> S["Node 's': ['system', 'sports', 'star']"]
+    S --> SY["Node 'sy': ['system design', 'python system', 'synonym']"]
+    SY --> SYS["Node 'sys': ['system design (40M)', 'systematic (10M)', 'system 32 (5M)']"]
 ```
+Now, querying the prefix `"sys"` takes **$O(L)$ time** where $L$ is the length of the prefix (3 operations), immediately returning the top 5 array in **0.01ms**!
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. Trie Partitioning across Shards
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+A complete global Trie of 100 Million prefixes consumes $pprox 50	ext{GB}$ of memory.
+- **Partitioning Strategy**: Consistent hashing on the **first 2 letters** of the prefix (`"aa" - "az"`, `"ba" - "bz"`).
+- Hot prefixes (e.g., `"g"`, `"s"`) are replicated across multiple read-only server clusters.
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+---
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+## 4. Key Takeaways
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Store precomputed Top-K suggestions directly inside each Trie node for $O(L)$ prefix lookup.
+- Aggregate search frequency asynchronously using stream processing (Kafka + Flink).
+- Cache popular prefix responses at edge CDNs and in browser localStorage.

@@ -1,53 +1,66 @@
-# Authentication vs Authorization: Sessions, Tokens, and JWTs
+# Authentication and Authorization
 
-> **Summary**: Clarifies identifying who a user is (AuthN) versus verifying what they can do (AuthZ).
-> Compares stateful session cookies (Redis session stores) against stateless JSON Web Tokens (JWT) and security traps.
+Authentication (AuthN) and Authorization (AuthZ) are the foundational identity and access pillars of modern distributed systems.
+
+```mermaid
+graph LR
+    subgraph "Authentication (AuthN)"
+        User[User / Client] -->|Credentials: Password / MFA / Cert| AuthN[Who are you?]
+        AuthN -->|Verifies identity| Identity[Verified Identity: User 42]
+    end
+
+    subgraph "Authorization (AuthZ)"
+        Identity --> AuthZ[What are you allowed to do?]
+        AuthZ -->|Evaluates policies| Access{Permitted to DELETE /orders/99?}
+        Access -->|Allow| Svc[Resource Service]
+        Access -->|Deny| 403[HTTP 403 Forbidden]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of authentication vs authorization: sessions, tokens, and jwts.
+## 1. AuthN vs AuthZ: The Critical Distinction
 
-## Why It Matters
-TBD: The operational and engineering problems authentication vs authorization: sessions, tokens, and jwts solves at scale.
-
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
-
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Dimension | Authentication (AuthN) | Authorization (AuthZ) |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Core Question** | "Who are you?" | "What are you permitted to do?" |
+| **Mechanisms** | Passwords, Passkeys (WebAuthn), TOTP MFA, X.509 client certs | RBAC, ABAC, ACLs, OAuth scopes |
+| **Failure Code** | `HTTP 401 Unauthorized` | `HTTP 403 Forbidden` |
+| **Transmission** | `Authorization: Bearer <token>` or mTLS cert | JWT claims, Policy Engine (OPA), Database ACL |
+| **Execution Point**| Edge Gateway / Identity Provider | Application Service / Resource Layer |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 2. Stateless Tokens (JWT) vs Stateful Sessions (Redis)
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+```mermaid
+graph TD
+    subgraph "Stateful Session Model"
+        C1[Client] -->|Cookie: session_id=xyz| G1[Server]
+        G1 -->|Network Roundtrip: 2ms| R1[(Redis Session Store)]
+        R1 --> G1
+        Note over R1: Instant Revocation: Delete 'xyz'
+    end
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+    subgraph "Stateless JWT Model"
+        C2[Client] -->|Header: Bearer eyJhbGci...| G2[Server / Gateway]
+        G2 -->|In-Memory Cryptographic Signature Check: <0.1ms| G2
+        Note over G2: Zero Database Lookups! Hard to revoke before expiry.
+    end
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define authentication vs authorization: sessions, tokens, and jwts.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+---
 
-## Common Interview Questions
-1. How does authentication vs authorization: sessions, tokens, and jwts impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing authentication vs authorization: sessions, tokens, and jwts?
-3. How do you scale authentication vs authorization: sessions, tokens, and jwts under 10x traffic spikes?
+## 3. Best Practices in Modern Architectures
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+1. **Short-Lived Access Tokens**: Keep JWT lifetimes to 10-15 minutes to minimize exposure if stolen.
+2. **Refresh Token Rotation**: Store refresh tokens in HTTP-only, Secure, SameSite cookies. Invalidate the entire refresh token family if a revoked token is reused.
+3. **Decentralized Validation**: Edge API Gateways verify JWT signatures and extract claims, injecting trusted headers (`X-User-Id`, `X-User-Roles`) into downstream microservices.
+
+---
+
+## 4. Key Takeaways
+
+- Authentication establishes identity; Authorization governs permissions.
+- Return `401 Unauthorized` when identity is missing or unverified, and `403 Forbidden` when the authenticated identity lacks permissions.
+- Combine short-lived stateless JWTs with stateful refresh tokens for the optimal balance of performance and security control.

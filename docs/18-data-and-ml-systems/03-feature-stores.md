@@ -1,53 +1,45 @@
-# Machine Learning Feature Stores: Online vs Offline Serving
+# Feature Stores: Feast and Hopsworks
 
-> **Summary**: Solves the train-serve skew problem in production machine learning systems (Feast, Hopsworks, Tecton).
-> Details dual-storage feature architecture: low-latency online serving (Redis) and high-throughput offline batch training (Parquet).
+A Feature Store is a centralized data management layer for machine learning that bridges the gap between batch feature engineering (training) and low-latency feature serving (inference).
+
+```mermaid
+graph TD
+    subgraph Feature Ingestion
+        BatchSource[Batch: Snowflake / S3] --> Feast[Feature Store / Feast Engine]
+        StreamSource[Stream: Kafka / Flink] --> Feast
+    end
+
+    subgraph Feature Storage
+        Feast --> Offline[(Offline Store: S3 / Snowflake Parquet)<br/>Stores Years of History for Training]
+        Feast --> Online[(Online Store: Redis / DynamoDB)<br/>Stores Latest Feature Vector: <10ms for Inference]
+    end
+
+    subgraph ML Consumers
+        Offline --> Train[Model Training: Point-in-time Joins]
+        Online --> Serve[Real-time Inference: Model Server]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of machine learning feature stores: online vs offline serving.
+## 1. The Dual-Store Problem
 
-## Why It Matters
-TBD: The operational and engineering problems machine learning feature stores: online vs offline serving solves at scale.
+Machine Learning models require features in two fundamentally different environments:
+- **Offline (Training)**: Needs terabytes of historical point-in-time data to train weights without data leakage. High throughput, batch-oriented.
+- **Online (Inference)**: Needs the latest feature values for a specific user ID within 5ms during an API call. Low latency, point lookups.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+Without a Feature Store, data science teams re-implement features twice (once in Python for training, once in Java/Go for production), causing **Training-Serving Skew**.
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Preventing Data Leakage with Point-in-Time Joins
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+When training an ML model to predict whether a loan defaults at timestamp $T$, the training pipeline must strictly exclude any features created *after* $T$ (e.g., late payments that occurred 6 months later). Feature stores automate point-in-time historical joins ("as-of joins").
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define machine learning feature stores: online vs offline serving.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does machine learning feature stores: online vs offline serving impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing machine learning feature stores: online vs offline serving?
-3. How do you scale machine learning feature stores: online vs offline serving under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Feature stores eliminate Training-Serving skew by defining feature logic once for both batch and real-time.
+- Use Redis or DynamoDB for the low-latency Online Store and S3/Snowflake for the high-capacity Offline Store.
+- Enforce point-in-time correctness to prevent future data leakage into training sets.

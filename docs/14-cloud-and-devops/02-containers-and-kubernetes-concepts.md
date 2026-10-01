@@ -1,53 +1,66 @@
-# Containers and Kubernetes Architecture Concepts
+# Containers and Kubernetes Architecture
 
-> **Summary**: Foundational mechanics of containerization: Linux namespaces, cgroups, Union File Systems, and OCI image layers.
-> Details Kubernetes control plane and primitives: Pods, Deployments, ReplicaSets, Services, Ingress, and ConfigMaps.
+Containerization packages application code with all dependencies, libraries, and runtime binaries into an immutable container image. Kubernetes (K8s) automates the deployment, scaling, and operational management of containerized workloads.
+
+```mermaid
+graph TD
+    subgraph "Kubernetes Control Plane (Master Nodes)"
+        API[kube-apiserver] <--> etcd[(etcd: Consensus State Store)]
+        API --> Sched[kube-scheduler: Assigns Pods to Nodes]
+        API --> CM[kube-controller-manager]
+    end
+
+    subgraph "Kubernetes Worker Node 1"
+        Kubelet1[kubelet] <--> API
+        KubeProxy1[kube-proxy]
+        CRI1[Containerd Runtime]
+        Pod1[Pod: App Container + Envoy Sidecar]
+    end
+
+    subgraph "Kubernetes Worker Node 2"
+        Kubelet2[kubelet] <--> API
+        KubeProxy2[kube-proxy]
+        CRI2[Containerd Runtime]
+        Pod2[Pod: App Container]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of containers and kubernetes architecture concepts.
+## 1. Core Kubernetes Building Blocks
 
-## Why It Matters
-TBD: The operational and engineering problems containers and kubernetes architecture concepts solves at scale.
+- **Pod**: The smallest deployable computing unit. Pods encapsulate one or more containers that share storage (volumes), network IP, and localhost namespace.
+- **Deployment**: Declarative specification managing replica sets, rolling updates, and rollbacks.
+- **Service**: Abstraction defining a logical set of Pods and a policy to access them (ClusterIP, NodePort, LoadBalancer).
+- **Ingress**: Manages external HTTP/HTTPS routing into services (e.g., NGINX Ingress, Traefik).
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Pod Lifecycle and Scheduling Mechanics
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Dev as kubectl apply
+    participant API as kube-apiserver
+    participant Sched as kube-scheduler
+    participant Kubelet as Worker Kubelet
+    participant CRI as Container Runtime
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+    Dev->>API: Submits Deployment manifest
+    API->>API: Validates and saves to etcd
+    Sched->>API: Detects unscheduled pod
+    Sched->>Sched: Filters & Ranks nodes (Affinity, Taints, Resource limits)
+    Sched->>API: Binds pod to Worker Node 1
+    Kubelet->>API: Watches pod bound to its node
+    Kubelet->>CRI: Pulls image & starts containers
+    Kubelet->>API: Reports pod status: Running
+```
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define containers and kubernetes architecture concepts.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does containers and kubernetes architecture concepts impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing containers and kubernetes architecture concepts?
-3. How do you scale containers and kubernetes architecture concepts under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Use Deployments for stateless services and StatefulSets for databases requiring persistent identity and storage.
+- Always define CPU and Memory `requests` and `limits` to prevent noisy neighbors from triggering kernel OOM kills.
+- Use `readinessProbes` and `livenessProbes` to enable zero-downtime rolling updates.

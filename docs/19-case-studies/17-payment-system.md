@@ -1,80 +1,80 @@
-# Design a Production Payment Gateway and Ledger (Stripe)
+# Design a Global Payment Processing System (Stripe / PayPal)
 
-> **System Scope**: Financial transaction processing platform ensuring zero funds loss, strict audit compliance, and sub-second authorization.
-> Implements immutable double-entry bookkeeping ledger, end-to-end idempotency keys, PSP integrations, and daily reconciliation.
+A mission-critical financial ledger and payment processing gateway requiring zero data loss, exact idempotency, ledger double-entry bookkeeping, and bank reconciliation.
+
+```mermaid
+graph TD
+    Merchant[Merchant Client] --> GW[Payment API Gateway]
+    GW --> Idemp[(Idempotency Store: Redis + Postgres)]
+    GW --> PayEngine[Payment Processing Engine]
+    
+    PayEngine --> Ledger[(Immutable Double-Entry Ledger DB)]
+    PayEngine --> BankProxy[Third-Party Bank / Card Network PSP Proxy]
+    BankProxy --> VisaMastercard[Visa / Mastercard / Banks]
+    
+    PayEngine --> ReconcileWorker[Nightly Bank Reconciliation Engine]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a production payment gateway and ledger (stripe) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a production payment gateway and ledger (stripe).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Charge credit cards and bank accounts.
+2. Provide absolute idempotency: duplicate requests must never result in duplicate charges.
+3. Maintain an immutable double-entry accounting ledger.
+4. Nightly reconciliation against bank settlement settlement files.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Zero Data Loss**: Highest durability and auditability standards (PCI-DSS Level 1 compliant).
+- **Strict Idempotency**: Safe automatic client retries.
+- **High Availability**: 99.999% uptime.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Double-Entry Bookkeeping Principles
 
-## 4. API Design
-```http
-POST /api/v1/a-production-payment-gateway-and-ledger-(stripe)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+In financial accounting, money never magically appears or vanishes; it moves between accounts. Every transaction must have **at least two entries** where:
+$$\sum 	ext{Debits} = \sum 	ext{Credits}$$
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Production Payment Gateway and Ledger (Stripe) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    subgraph "Customer Buys $100 Product (Double-Entry Ledger)"
+        D1[Debit: Customer Cash Account +$100]
+        C1[Credit: Merchant Payable Account +$97]
+        C2[Credit: Stripe Fee Revenue Account +$3]
+    end
+    Note over D1,C2: Total Debits ($100) == Total Credits ($97 + $3 = $100)! Balanced!
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. Strict Idempotency Implementation
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Merchant App
+    participant PaySvc as Payment Gateway
+    participant DB as Postgres Idempotency Table
+    participant Bank as Card Network
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+    Client->>PaySvc: POST /v1/charges (Header: Idempotency-Key: abc-123)
+    Note over PaySvc: Checks DB: INSERT INTO idempotency_keys (key, status) VALUES ('abc-123', 'STARTED')
+    alt Key already exists with COMPLETED status
+        PaySvc-->>Client: Returns cached HTTP 200 response immediately (Zero bank charge!)
+    else First time seen
+        PaySvc->>Bank: Charge Card $100
+        Bank-->>PaySvc: Charge Succeeded
+        PaySvc->>DB: UPDATE idempotency_keys SET status='COMPLETED', response_body='...'
+        PaySvc-->>Client: 200 OK (Charged)
+    end
+```
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Financial systems must enforce Double-Entry Bookkeeping where debits equal credits.
+- All payment APIs must enforce unique client-supplied `Idempotency-Key` headers.
+- Implement automated nightly reconciliation to detect discrepancies between internal ledgers and bank clearing files.

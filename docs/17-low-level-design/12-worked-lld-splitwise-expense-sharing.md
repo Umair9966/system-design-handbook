@@ -1,53 +1,69 @@
-# Worked LLD Problem: Expense Sharing System (Splitwise)
+# Worked LLD: Splitwise (Expense Sharing & Debt Simplification)
 
-> **Summary**: Complete object-oriented design for expense splitting among groups (Equal, Exact, and Percentage splits).
-> Implements the min-cash-flow graph settlement algorithm to minimize the total number of transactions between members.
+A complete Low-Level Design for an expense sharing system (Splitwise) supporting Equal, Exact, and Percentage splits, along with the **Greedy Debt Simplification Algorithm**.
+
+```mermaid
+graph TD
+    subgraph "Debt Simplification Algorithm"
+        A[Alice owes Bob $40]
+        B[Bob owes Charlie $40]
+        Direct[Simplified: Alice pays Charlie $40 directly!]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of worked lld problem: expense sharing system (splitwise).
+## 1. Production Code Implementation (Python)
 
-## Why It Matters
-TBD: The operational and engineering problems worked lld problem: expense sharing system (splitwise) solves at scale.
+```python
+from typing import Dict, List
+import heapq
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+class SplitType:
+    EQUAL = "EQUAL"
+    EXACT = "EXACT"
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+class Expense:
+    def __init__(self, payer_id: str, amount: float, splits: Dict[str, float]):
+        self.payer_id = payer_id
+        self.amount = amount
+        self.splits = splits # user_id -> amount owed
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+class DebtSimplifier:
+    @staticmethod
+    def simplify_debts(balances: Dict[str, float]) -> List[str]:
+        # Positive balance = owed money (creditor)
+        # Negative balance = owes money (debtor)
+        debtors = [] # max heap (stored as positive)
+        creditors = [] # max heap
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+        for user, bal in balances.items():
+            if bal < -0.01:
+                heapq.heappush(debtors, (bal, user)) # min heap gives most negative
+            elif bal > 0.01:
+                heapq.heappush(creditors, (-bal, user)) # max heap
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+        transactions = []
+        while debtors and creditors:
+            debt_amt, debtor = heapq.heappop(debtors)
+            debt_amt = -debt_amt
+            cred_amt, creditor = heapq.heappop(creditors)
+            cred_amt = -cred_amt
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+            settled = min(debt_amt, cred_amt)
+            transactions.append(f"{debtor} pays {creditor} ${settled:.2f}")
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+            if debt_amt > cred_amt:
+                heapq.heappush(debtors, (-(debt_amt - settled), debtor))
+            elif cred_amt > debt_amt:
+                heapq.heappush(creditors, (-(cred_amt - settled), creditor))
 
-## Key Takeaways
-- Foundational architectural trade-offs define worked lld problem: expense sharing system (splitwise).
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+        return transactions
+```
 
-## Common Interview Questions
-1. How does worked lld problem: expense sharing system (splitwise) impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing worked lld problem: expense sharing system (splitwise)?
-3. How do you scale worked lld problem: expense sharing system (splitwise) under 10x traffic spikes?
+---
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+## 2. Key Takeaways
+
+- Calculate net balances per user across all transactions ($O(N)$).
+- Use two priority heaps (debtors and creditors) to greedily eliminate debt in at most $N-1$ transactions.

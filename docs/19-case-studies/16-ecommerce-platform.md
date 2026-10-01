@@ -1,80 +1,70 @@
-# Design an E-Commerce Platform (Amazon-Scale)
+# Design an E-Commerce Platform (Amazon / Shopify)
 
-> **System Scope**: Comprehensive retail platform covering product search, persistent shopping cart, checkout, and inventory decrement.
-> Explores flash sale inventory locking, distributed order processing sagas, payment orchestration, and fulfillment tracking.
+A distributed commerce platform handling product catalog browsing, search, shopping cart management, inventory reservation, and high-throughput checkout workflows.
+
+```mermaid
+graph TD
+    Client[Shopper] --> CDN[Edge CDN / Fastly]
+    CDN --> GW[API Gateway]
+
+    GW --> CatalogSvc[Product Catalog Service] --> CatalogDB[(Elasticsearch + Postgres)]
+    GW --> CartSvc[Shopping Cart Service] --> CartCache[(Redis / DynamoDB)]
+    GW --> CheckoutSvc[Checkout Orchestrator (Saga)]
+    
+    CheckoutSvc --> InvSvc[Inventory Service] --> InvDB[(Inventory DB: Strict ACID)]
+    CheckoutSvc --> OrderSvc[Order Service] --> OrderDB[(Order DB)]
+    CheckoutSvc --> PaySvc[Payment Service]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for an e-commerce platform (amazon-scale) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for an e-commerce platform (amazon-scale).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Product catalog browsing and search with filters (brand, price, ratings).
+2. Shopping cart persistence across devices.
+3. Inventory deduction with atomic check-and-decrement.
+4. Order placement, payment processing, and confirmation email.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **High Availability**: Catalog browsing must never fail (99.999% uptime).
+- **Strong Consistency for Inventory**: Never sell more items than exist in physical stock.
+- **Low Latency**: Product page $< 50	ext{ms}$; checkout $< 1	ext{ second}$.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Inventory Reservation: Preventing Overselling
 
-## 4. API Design
-```http
-POST /api/v1/an-e-commerce-platform-(amazon-scale)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Relational databases guarantee ACID atomicity during checkout:
 
-{
-  "request_payload": "value"
-}
+```sql
+-- Atomic check and decrement in a single SQL statement:
+UPDATE inventory
+SET available_quantity = available_quantity - :purchased_quantity,
+    version = version + 1
+WHERE product_id = :product_id 
+  AND available_quantity >= :purchased_quantity;
 ```
+If the rows affected is `1`, the inventory was successfully reserved without table-level locking. If rows affected is `0`, stock was exhausted.
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+---
 
-## 6. High-Level Architecture
+## 3. The Checkout Saga Pattern
+
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[an E-Commerce Platform (Amazon-Scale) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    Start[Checkout Initiated] --> S1[1. Reserve Inventory]
+    S1 --> S2[2. Authorize Payment]
+    S2 --> S3[3. Create Order]
+    S3 --> S4[4. Emit OrderPlaced Event]
+
+    S2 -.->|Payment Declined!| Comp1[Compensate: Release Reserved Inventory]
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 4. Key Takeaways
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Decouple read-heavy catalog browsing (Elasticsearch + CDN) from write-critical inventory deduction.
+- Use atomic SQL `UPDATE ... WHERE available_quantity >= :qty` to eliminate overselling race conditions.
+- Coordinate multi-service checkout workflows using Sagas with automated compensating transactions.

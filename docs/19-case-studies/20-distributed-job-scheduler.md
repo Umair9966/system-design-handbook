@@ -1,80 +1,64 @@
-# Design a Distributed Job Scheduler and Task Queue
+# Design a Distributed Job Scheduler (Cron / Celery / Airflow)
 
-> **System Scope**: Fault-tolerant workflow execution engine scheduling millions of recurring cron jobs and complex task DAGs.
-> Features leader-worker architecture, distributed heartbeat monitoring, priority task queues, and at-least-once execution guarantees.
+A resilient, horizontally scalable distributed task scheduling platform capable of executing millions of scheduled (cron) and ad-hoc background jobs with exact timing guarantees and fault tolerance.
+
+```mermaid
+graph TD
+    Client[Client App] --> API[Job Submission API]
+    API --> MetaDB[(Job Metadata Store: PostgreSQL)]
+    
+    Scheduler[Distributed Scheduler Master / Raft] --> MetaDB
+    Scheduler --> DelayQueue[(Sorted Delay Queue: Redis / Kafka)]
+    
+    DelayQueue --> WorkerPool[Worker Node Cluster]
+    WorkerPool --> Heartbeat[(Heartbeat & Lease Tracker)]
+    WorkerPool --> ResultStore[(Job Result Store)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a distributed job scheduler and task queue supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a distributed job scheduler and task queue.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Schedule one-off delayed tasks (e.g., "Send email in 30 minutes").
+2. Schedule recurring cron jobs (`0 0 * * *` = daily midnight).
+3. Task dependency Directed Acyclic Graphs (DAGs) (Job B runs only after Job A succeeds).
+4. Automatic retries with exponential backoff on worker crash.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Fault Tolerance**: If a worker node crashes mid-execution, reassign the job to another worker.
+- **At-Least-Once Execution**: No scheduled job is permanently dropped.
+- **Scale**: Execute 10+ Million jobs per day.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Scheduling Delay Queue: Redis Sorted Sets vs Hierarchical Timing Wheels
 
-## 4. API Design
-```http
-POST /api/v1/a-distributed-job-scheduler-and-task-queue
-Content-Type: application/json
-Idempotency-Key: <uuid>
+To schedule jobs with future execution timestamps:
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Distributed Job Scheduler and Task Queue Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    Job[Job: Execute at timestamp 1767225600] --> ZSet[Redis ZSET: key='scheduled_jobs', score=timestamp]
+    Poller[Scheduler Poller] -->|ZRANGEBYSCORE scheduled_jobs 0 CurrentTime| Pop[Pops ready jobs]
+    Pop --> Worker[Dispatches to Worker Pool]
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### Hierarchical Timing Wheels:
+For ultra-high-throughput sub-second scheduling, **Hierarchical Timing Wheels** (used by Kafka and Netty) execute timer registrations in $O(1)$ time without sorted list insertion overhead ($O(\log N)$).
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Worker Heartbeating and Failure Recovery
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+Workers hold a lease on running jobs:
+1. Worker acquires task: `UPDATE jobs SET status='RUNNING', heartbeat=NOW() WHERE id=:id`.
+2. Worker sends a heartbeat ping every 10 seconds.
+3. If heartbeat is missing for 60 seconds, Scheduler marks the job `FAILED` and re-queues it for another worker.
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use Redis Sorted Sets or Timing Wheels for high-performance delayed job queues.
+- Prevent duplicate execution using database row-level locking or distributed fencing tokens.
+- Implement worker heartbeats with timeout leases to recover from worker hardware crashes.

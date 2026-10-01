@@ -1,80 +1,82 @@
-# Design a Scalable Distributed Rate Limiter
+# Design a Distributed Rate Limiting System
 
-> **System Scope**: Distributed API traffic throttling service protecting backend microservices against abuse and DDoS.
-> Employs sliding window counter algorithm implemented in Redis via atomic Lua scripts to eliminate race conditions.
+A mission-critical distributed rate limiter service that protects public and internal APIs from denial-of-service (DDoS) attacks, brute-force credential stuffing, and resource exhaustion.
+
+```mermaid
+graph TD
+    Client[Incoming Client API Request] --> Edge[Envoy Proxy / API Gateway]
+    Edge --> Filter[Rate Limiter HTTP Filter]
+    Filter --> RL_Svc[Distributed Rate Limiter Service]
+    RL_Svc --> Redis[(Redis Cluster: Lua Script Execution)]
+    
+    Filter -->|Allowed: Within Limit| Backend[Upstream Microservice]
+    Filter -->|Exceeded Limit| 429[HTTP 429 Too Many Requests]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a scalable distributed rate limiter supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a scalable distributed rate limiter.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Limit requests based on client IP, authenticated User ID, or API Key.
+2. Support configurable tiered limits (e.g., 100 req/min for free users; 5,000 req/min for enterprise).
+3. Return informative HTTP standard headers:
+   - `X-RateLimit-Limit: 100`
+   - `X-RateLimit-Remaining: 42`
+   - `X-RateLimit-Reset: 1696156860`
+   - `Retry-After: 30` (on HTTP 429).
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Ultra-Low Latency**: Adding rate limiting must not add $> 2	ext{ms}$ overhead to API requests.
+- **Distributed Accuracy**: Correct count enforcement across hundreds of distributed gateway pods.
+- **Fail-Open Policy**: If the rate limiter crashes, requests must be allowed through (graceful degradation) rather than blocking all legitimate traffic.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Algorithm Comparison: Sliding Window Counter
 
-## 4. API Design
-```http
-POST /api/v1/a-scalable-distributed-rate-limiter
-Content-Type: application/json
-Idempotency-Key: <uuid>
+| Algorithm | Accuracy | Memory Footprint | Burst Handling | Production Verdict |
+| :--- | :--- | :--- | :--- | :--- |
+| **Token Bucket** | High | Low ($O(1)$ memory) | Allows configured bursts | Excellent for API Gateways |
+| **Leaky Bucket** | High | Moderate (Queue depth) | Smooths traffic to constant rate | Great for egress webhooks |
+| **Fixed Window** | Low (Boundary spike allows 2x) | Ultra-Low ($O(1)$) | Vulnerable at window boundary | Not recommended |
+| **Sliding Window Log**| 100% Exact | Extremely High ($O(N)$ memory) | Precise | Too expensive for high QPS |
+| **Sliding Window Counter**| 99% Accurate Approximation | Ultra-Low ($O(1)$) | Smooth and accurate | **Best for high-scale distributed systems** |
 
-{
-  "request_payload": "value"
-}
+---
+
+## 3. Distributed Redis Lua Script (Atomic Execution)
+
+In distributed architectures, running multiple Redis commands (`GET`, increment, `EXPIRE`) from application servers introduces race conditions. We execute the Sliding Window Counter atomically using a single Redis Lua script:
+
+```lua
+-- KEYS[1]: Rate limit key (e.g., "ratelimit:user_123:minute")
+-- ARGV[1]: Current timestamp (seconds)
+-- ARGV[2]: Window size in seconds (e.g., 60)
+-- ARGV[3]: Max allowed requests
+
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+
+local clearBefore = now - window
+redis.call('ZREMRANGEBYSCORE', key, 0, clearBefore)
+
+local currentRequests = redis.call('ZCARD', key)
+if currentRequests < limit then
+    redis.call('ZADD', key, now, now)
+    redis.call('EXPIRE', key, window)
+    return 1 -- Allowed
+else
+    return 0 -- Denied (Rate limited)
+end
 ```
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+---
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Scalable Distributed Rate Limiter Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
+## 4. Key Takeaways
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
-
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
-
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Execute rate-limiting logic inside Redis via atomic Lua scripts to eliminate distributed race conditions.
+- Standardize on `HTTP 429 Too Many Requests` with `Retry-After` headers.
+- Always configure a Fail-Open architecture so rate-limiter outages do not bring down the entire company.

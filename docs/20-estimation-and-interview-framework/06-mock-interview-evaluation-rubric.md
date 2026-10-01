@@ -1,53 +1,35 @@
-# Mock Interview Evaluation Rubric and Grading Criteria
+# System Design Interview Evaluation Rubric (FAANG Standards)
 
-> **Summary**: Staff-level grading rubric used by engineering interviewers at top-tier tech companies.
-> Evaluates candidates across Problem Navigation, System Correctness, Scalability & Bottlenecks, Depth, and Communication.
+How interviewers evaluate candidates across Staff and Principal engineering dimensions.
+
+```mermaid
+radar
+    title Candidate Competency Dimensions
+    "Requirements & Scoping" : 4
+    "High-Level Architecture" : 5
+    "Distributed Deep Dive" : 4
+    "Trade-off Articulation" : 5
+    "Fault Tolerance & Scale" : 4
+    "Communication & Leadership" : 5
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of mock interview evaluation rubric and grading criteria.
+## The 4 Competency Levels
 
-## Why It Matters
-TBD: The operational and engineering problems mock interview evaluation rubric and grading criteria solves at scale.
+| Dimension | Junior / Mid (L4) | Senior (L5) | Staff / Principal (L6+) |
+| :--- | :--- | :--- | :--- |
+| **Scoping** | Waits for requirements to be handed down | Identifies key use cases and non-functional requirements | Clarifies business trade-offs, identifies ambiguous edge cases |
+| **Architecture** | Simple 3-tier app (Client -> API -> DB) | Microservices, caching, read replicas, messaging queues | Elegant distributed topologies, handles partitioning and consensus |
+| **Data Design** | Basic SQL table schema | Appropriate SQL vs NoSQL selection, indexing strategy | Sharding key selection, replication models, data consistency guarantees |
+| **Resilience** | Mentions backups | Circuit breakers, health checks, multi-AZ deployment | Active-Active multi-region, split-brain mitigation, chaos engineering |
+| **Communication**| Hesitant, needs prompting | Clear, drives standard framework | Inspiring, drives consensus, explains complex trade-offs simply |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## Scoring Grid
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
-
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
-
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
-
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define mock interview evaluation rubric and grading criteria.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does mock interview evaluation rubric and grading criteria impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing mock interview evaluation rubric and grading criteria?
-3. How do you scale mock interview evaluation rubric and grading criteria under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+1. **Strong No Hire**: Silent, unable to handle scale, suggests single MySQL instance for 100M QPS, defends broken designs.
+2. **No Hire**: Implements generic textbook architecture, unable to explain internals of proposed technologies, misses major failure modes.
+3. **Hire**: Follows 6-step framework cleanly, makes justifiable tech choices, calculates accurate numbers, handles failure scenarios gracefully.
+4. **Strong Hire**: Drives the session masterfully, proactively points out subtle distributed bugs (cache stampedes, clock skew, split-brain), evaluates trade-offs with mathematical rigor.

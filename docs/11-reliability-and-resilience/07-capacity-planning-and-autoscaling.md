@@ -1,53 +1,57 @@
-# Capacity Planning and Autoscaling Strategies
+# Capacity Planning and Autoscaling
 
-> **Summary**: Framework for forecasting infrastructure needs: headroom calculation, traffic seasonal spikes, and stress limits.
-> Analyzes reactive metrics-based autoscaling (CPU/memory), queue-depth scaling, and predictive ML-based scaling.
+Capacity planning ensures a system has sufficient compute, memory, storage, and network bandwidth to meet expected load with acceptable latency while minimizing infrastructure costs.
+
+```mermaid
+graph TD
+    Metrics[System Metrics: CPU, Memory, Queue Depth, Req/sec] --> MetricsServer[Kubernetes Metrics Server / Prometheus]
+    MetricsServer --> HPA[Horizontal Pod Autoscaler (HPA)]
+    HPA -->|Pod Replicas: Scales 10 -> 80| Deploy[Application Deployment]
+    Deploy --> CA[Cluster Autoscaler / Karpenter]
+    CA -->|Provisions New Cloud VM Nodes| Cloud[AWS EC2 / GCP Compute]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of capacity planning and autoscaling strategies.
+## 1. Vertical vs Horizontal Autoscaling
 
-## Why It Matters
-TBD: The operational and engineering problems capacity planning and autoscaling strategies solves at scale.
+- **HPA (Horizontal Pod Autoscaler)**: Increases or decreases the number of pod or container replicas based on real-time load.
+- **VPA (Vertical Pod Autoscaler)**: Dynamically adjusts CPU and memory resource requests/limits of existing containers.
+- **Cluster Autoscaler (Karpenter)**: Adds physical or virtual cloud worker nodes to the Kubernetes cluster when pending pods cannot be scheduled due to insufficient node resources.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Autoscaling Metrics: Choosing the Right Trigger
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| Metric | Scaling Speed | Pitfalls / Gotchas | Best For |
+| :--- | :--- | :--- | :--- |
+| **CPU Utilization** | Moderate | CPU is a lagging indicator; spike arrives before CPU registers | General compute workloads |
+| **Memory Utilization** | Very Slow | Garbage collected languages (Java, Go) retain memory; won't trigger scale down | Memory leaks, cache nodes |
+| **Queue Depth (SQS / Kafka Lag)**| Fast & Predictive | If consumers crash, queue expands and spawns infinite pods | Asynchronous worker pipelines |
+| **Request Rate (RPS)** | Instant | Requires custom metrics via Prometheus adapter | Public HTTP API gateways |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. The Autoscaling Thrashing Problem (Flapping)
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+Rapid oscillation between scaling up and scaling down due to short bursts:
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```mermaid
+graph TD
+    Spike[Sudden 30s Spike] --> ScaleUp[Scale Up to 100 Pods]
+    SpikeEnd[Spike Clears] --> ScaleDown[Scale Down to 10 Pods]
+    Spike2[Another Burst] --> ScaleUp2[Scale Up Again!]
+    Note over ScaleUp,ScaleUp2: Causes continuous container cold starts and waste
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define capacity planning and autoscaling strategies.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+### Prevention:
+- **Cooldown / Stabilization Windows**: Require a metric to remain low for at least 5 minutes before initiating a scale-down.
+- **Scale-Up Aggressive, Scale-Down Conservative**: Scale up instantly (e.g., +100% capacity), scale down slowly (e.g., -10% every 5 minutes).
 
-## Common Interview Questions
-1. How does capacity planning and autoscaling strategies impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing capacity planning and autoscaling strategies?
-3. How do you scale capacity planning and autoscaling strategies under 10x traffic spikes?
+---
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+## 4. Key Takeaways
+
+- Scale horizontally on request rate or queue depth rather than lagging CPU metrics whenever possible.
+- Configure aggressive scale-up policies paired with conservative scale-down cooldown windows to prevent thrashing.
+- Align container autoscaling (HPA) with node autoscaling (Karpenter) to avoid scheduling deadlocks.

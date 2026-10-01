@@ -1,53 +1,55 @@
-# Concurrency Primitives, Thread Pools, and Deadlock Prevention
+# Concurrency Primitives: Mutexes, Semaphores, and Thread Pools
 
-> **Summary**: Low-level multi-threading mechanics: Threads, Mutexes, Read-Write Locks, Condition Variables, and Semaphores.
-> Details thread pool sizing, race condition detection, and the Coffman conditions for preventing deadlocks.
+Concurrency primitives prevent race conditions, memory corruption, and deadlocks in multi-threaded environments.
+
+```mermaid
+graph TD
+    subgraph "Concurrency Primitives"
+        Mutex[Mutex / Lock: Mutual Exclusion (1 Thread)]
+        RWMutex[RWMutex: Multiple Readers, 1 Writer]
+        Semaphore[Semaphore: Permit Counter (N Threads)]
+        Condition[Condition Variable: Signal / Wait]
+        Atomic[Atomic CPU CAS: Lock-Free Operations]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of concurrency primitives, thread pools, and deadlock prevention.
+## 1. Comparing Concurrency Primitives
 
-## Why It Matters
-TBD: The operational and engineering problems concurrency primitives, thread pools, and deadlock prevention solves at scale.
-
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
-
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Primitive | Mechanism | Primary Use Case |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Mutex (Lock)** | Only 1 thread holds lock; others block | Protecting shared mutable in-memory state |
+| **RWLock (Shared Lock)**| Multiple concurrent readers OR single exclusive writer | Read-heavy data structures (e.g., caches) |
+| **Counting Semaphore** | Maintains $K$ permits (`acquire()` / `release()`) | Limiting concurrent DB connections or worker pools |
+| **Atomic (CAS)** | Hardware CPU instruction (`CMPXCHG`) | Lock-free counters and flags with zero thread sleep |
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 2. The Four Coffman Deadlock Conditions
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+A system deadlock occurs if and only if **all four** conditions hold simultaneously:
+1. **Mutual Exclusion**: Resources cannot be shared.
+2. **Hold and Wait**: Threads hold resources while waiting for others.
+3. **No Preemption**: Resources cannot be forcibly taken away.
+4. **Circular Wait**: Thread A waits for B, and B waits for A.
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+### Prevention:
+Break condition 4 (**Circular Wait**) by enforcing a **strict global lock acquisition order** everywhere in code:
+```python
+# PREVENTS DEADLOCK: Always lock in ascending order of resource ID!
+def transfer(acc1, acc2, amount):
+    first, second = (acc1, acc2) if acc1.id < acc2.id else (acc2, acc1)
+    with first.lock:
+        with second.lock:
+            acc1.balance -= amount
+            acc2.balance += amount
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define concurrency primitives, thread pools, and deadlock prevention.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+---
 
-## Common Interview Questions
-1. How does concurrency primitives, thread pools, and deadlock prevention impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing concurrency primitives, thread pools, and deadlock prevention?
-3. How do you scale concurrency primitives, thread pools, and deadlock prevention under 10x traffic spikes?
+## 3. Key Takeaways
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Prefer RWMutex for read-heavy workloads to prevent readers from blocking other readers.
+- Prevent deadlocks by enforcing consistent lock acquisition ordering across the codebase.
+- Use atomics (`AtomicInteger`) for counters to avoid mutex context-switch overhead.

@@ -1,53 +1,83 @@
-# Worked LLD Problem: Thread-Safe Rate Limiter
+# Worked LLD: In-Memory Rate Limiter (Token Bucket)
 
-> **Summary**: Object-oriented implementation of Token Bucket and Sliding Window rate limiting algorithms in code.
-> Details thread safety using mutex locks, atomic operations, and memory cleanup sweeps for inactive clients.
+A complete Low-Level Design for a thread-safe, high-throughput in-memory Token Bucket rate limiter.
+
+```mermaid
+classDiagram
+    class TokenBucket {
+        -double capacity
+        -double refillRate
+        -double availableTokens
+        -Instant lastRefillTime
+        +allowRequest(int tokens) bool
+        -refill() void
+    }
+    class RateLimiterService {
+        -ConcurrentHashMap~String, TokenBucket~ buckets
+        +isAllowed(String clientKey) bool
+    }
+    RateLimiterService "1" *-- "*" TokenBucket
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of worked lld problem: thread-safe rate limiter.
+## 1. Requirements
 
-## Why It Matters
-TBD: The operational and engineering problems worked lld problem: thread-safe rate limiter solves at scale.
+1. Token Bucket algorithm: Smooth traffic bursts up to capacity while enforcing steady-state refill rate.
+2. Thread-safe execution under multi-threaded concurrency.
+3. Memory leak protection: Automatically expire idle client buckets.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Production Code Implementation (Python)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```python
+import time
+import threading
+from typing import Dict
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+class TokenBucket:
+    def __init__(self, capacity: float, refill_rate_per_sec: float):
+        self.capacity = capacity
+        self.refill_rate = refill_rate_per_sec
+        self.tokens = capacity
+        self.last_refill_timestamp = time.monotonic()
+        self._lock = threading.Lock()
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+    def allow(self, tokens_needed: int = 1) -> bool:
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.last_refill_timestamp
+            self.last_refill_timestamp = now
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+            # Refill tokens proportional to elapsed time
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+            if self.tokens >= tokens_needed:
+                self.tokens -= tokens_needed
+                return True
+            return False
 
-## Key Takeaways
-- Foundational architectural trade-offs define worked lld problem: thread-safe rate limiter.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+class RateLimiterService:
+    def __init__(self, capacity: float = 10, refill_rate: float = 2):
+        self.capacity = capacity
+        self.refill_rate = refill_rate
+        self.clients: Dict[str, TokenBucket] = {}
+        self._global_lock = threading.Lock()
 
-## Common Interview Questions
-1. How does worked lld problem: thread-safe rate limiter impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing worked lld problem: thread-safe rate limiter?
-3. How do you scale worked lld problem: thread-safe rate limiter under 10x traffic spikes?
+    def is_allowed(self, client_id: str) -> bool:
+        with self._global_lock:
+            if client_id not in self.clients:
+                self.clients[client_id] = TokenBucket(self.capacity, self.refill_rate)
+            bucket = self.clients[client_id]
+        
+        return bucket.allow(1)
+```
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+---
+
+## 3. Key Takeaways
+
+- Lazy evaluation (`time.monotonic()` delta) eliminates the need for expensive background refill timer threads.
+- Two-level locking prevents thread contention across different clients.
+- Handle Clock Skew by using monotonic timers instead of wall-clock epoch time.

@@ -1,80 +1,66 @@
-# Design a Global Video Streaming Platform (YouTube/Netflix)
+# Design a Global Video Streaming Platform (YouTube / Netflix)
 
-> **System Scope**: Large-scale video delivery platform supporting user uploads, multi-bitrate transcoding, and worldwide streaming playback.
-> Implements video chunking, adaptive bitrate streaming (HLS/DASH), storage tiering, and multi-tier CDN edge caching.
+A petabyte-scale video platform supporting user video uploads, asynchronous distributed transcoding into multi-bitrate profiles, global CDN edge caching, and adaptive bitrate streaming (HLS/DASH).
+
+```mermaid
+graph TD
+    Creator[Content Creator] --> UploadGW[Upload Gateway]
+    UploadGW --> RawS3[(Raw Video Bucket: S3)]
+    RawS3 --> Kafka[Upload Event Topic]
+    
+    Kafka --> TranscodeMgr[Transcoding Pipeline Coordinator]
+    TranscodeMgr --> WorkerPool[Distributed GPU Transcoder Nodes]
+    WorkerPool --> TranscodeS3[(Packaged HLS Chunks S3)]
+    
+    TranscodeS3 --> CDN[Global CDN: Cloudflare / Fastly]
+    CDN --> Viewer[Viewer Video Player (Adaptive Bitrate)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a global video streaming platform (youtube/netflix) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a global video streaming platform (youtube/netflix).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Video Upload: Creators can upload high-resolution videos (up to 4K, 50GB).
+2. Video Transcoding: Automatically transcode source into multiple resolutions (1080p, 720p, 480p, 360p) in H.264/AV1.
+3. Adaptive Bitrate Streaming: Client video player adjusts resolution dynamically based on network bandwidth.
+4. Video Metadata & Search: Title, description, tags, view count.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Zero Buffering**: Instant video start time ($< 1	ext{ second}$).
+- **Global Scale**: 100+ Million concurrent video streams globally.
+- **High Durability**: Uploaded master videos must never be corrupted.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Video Processing Pipeline: Chunk-Based Transcoding
 
-## 4. API Design
-```http
-POST /api/v1/a-global-video-streaming-platform-(youtube/netflix)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Transcoding a 2-hour 4K video as a single monolithic file on one server takes hours and fails completely if the server crashes at 98%.
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Global Video Streaming Platform (YouTube/Netflix) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    Master[Uploaded 4K Video] --> Split[Splitter: Chunks into 10-second segments]
+    Split --> Q[SQS Job Queue]
+    Q --> W1[Worker 1: Transcodes Chunk 0-10s to 1080p/720p/360p]
+    Q --> W2[Worker 2: Transcodes Chunk 10-20s to 1080p/720p/360p]
+    Q --> WN[Worker N: Transcodes Chunk N]
+    W1 --> Assembler[Packager: Generates HLS .m3u8 Playlist]
+    W2 --> Assembler
+    Assembler --> OutS3[(S3 Final Storage)]
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. CDN Caching Strategy for Video Chunks
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+Video files are immutable and read-heavy:
+- 10-second `.ts` or `.m4s` video segments are aggressively cached at edge CDN locations with `Cache-Control: public, max-age=31536000`.
+- 99% of video streaming bandwidth is absorbed by edge CDNs; origin S3 storage serves only the initial cache-fill requests.
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+---
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+## 4. Key Takeaways
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Chunk video uploads using S3 Multipart Upload and split videos into 10-second segments for parallel transcoding.
+- Package videos using HLS/DASH for client-side Adaptive Bitrate (ABR) streaming.
+- Offload 99% of bandwidth delivery to edge CDNs with immutable segment URLs.

@@ -1,53 +1,69 @@
 # Relational Databases: ACID, Transactions, and the Write-Ahead Log
 
-> **Summary**: Explains relational database foundations, ACID guarantees (Atomicity, Consistency, Isolation, Durability).
-> Details how the Write-Ahead Log (WAL) guarantees crash recovery and durability before memory flushes.
-
----
-
 ## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of relational databases: acid, transactions, and the write-ahead log.
+A **Relational Database Management System (RDBMS)** structures data into strictly defined tables consisting of rows and columns, enforcing relationships via foreign keys and mathematical relational algebra. The defining hallmark of enterprise relational databases is support for **ACID transactions**:
+- **Atomicity**: All operations in a transaction succeed, or none do ("all or nothing").
+- **Consistency**: A transaction transitions the database from one valid state to another, satisfying all schema constraints, checks, and foreign keys.
+- **Isolation**: Concurrent transactions execute without interfering with one another.
+- **Durability**: Once committed, transaction updates persist permanently, surviving OS crashes or hardware power loss.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    Client->>DB: BEGIN TRANSACTION
+    Client->>DB: UPDATE accounts SET bal = bal - 100 WHERE id = 1
+    DB->>WAL: 1. Append mutation to Write-Ahead Log (Sequential fsync)
+    WAL-->>DB: Disk fsync complete!
+    DB->>BufferPool: 2. Modify in-memory 16KB dirty page
+    Client->>DB: COMMIT
+    DB-->>Client: Success (Guaranteed Durable!)
+    Note over DB, Disk: 3. Background Checkpointer flushes dirty page to table disk
+```
 
 ## Why It Matters
-TBD: The operational and engineering problems relational databases: acid, transactions, and the write-ahead log solves at scale.
+Without ACID guarantees, power cuts during financial transfers cause money to vanish from one account without appearing in the other. Relational databases guarantee financial and operational integrity through battle-tested crash recovery algorithms.
 
 ## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+- **The Write-Ahead Log (WAL)**: The foundational mechanism ensuring durability and crash recovery. Before any in-memory data page is modified in the database buffer pool, the exact delta mutation must be appended sequentially to the WAL on disk and physically flushed (`fsync`).
+- **ARIES Crash Recovery**: Algorithm for Recovery and Isolation Exploiting Semantics. When a crashed database boots up:
+  1. *Analysis Pass*: Identifies dirty pages and active in-flight transactions at the time of the crash.
+  2. *Redo Pass*: Replays all committed changes in the log forward to bring the database to the exact crash state.
+  3. *Undo Pass*: Rolls back all incomplete, uncommitted transactions backward to ensure clean consistency.
+- **Checkpointing**: Periodic background flushing of dirty memory pages to disk tables, allowing older segments of the WAL to be safely truncated.
 
 ## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Dimension | Relational ACID Database | Non-ACID / Eventual Store |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Data Integrity** | **Absolute (zero money lost, zero partial writes)**| Eventual (reconciliation logic needed) |
+| **Write Throughput** | Limited by disk `fsync` and lock contention | Massive (appends without coordination) |
+| **Schema Flexibility**| Strict (requires migrations) | Dynamic (schemaless JSON / Key-Value) |
+| **Horizontal Sharding**| Difficult (cross-shard joins/transactions are slow)| Native (built-in sharding and partitioning) |
 
 ## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+### When to Use Relational ACID Databases
+- Financial accounting, banking ledgers, checkout and payment systems, enterprise ERPs, and identity authentication tables.
 
 ### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+- High-volume time-series sensor telemetry, massive clickstream analytics, unstructured document graphs.
 
 ## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+- **Stripe & PayPal**: Standardize strictly on relational ACID databases (PostgreSQL, CockroachDB) for their core balance ledgers to ensure zero double-spending.
+- **AWS Aurora**: Re-architected MySQL/PostgreSQL for the cloud by offloading the Write-Ahead Log directly to a distributed storage fleet, achieving 5x standard MySQL throughput.
 
 ## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+- **Long-Running Transactions**: Keeping a transaction open while awaiting an external HTTP API response (e.g., Stripe charge), holding row locks open for seconds and causing database connection pool starvation.
+- **Premature NoSQL Migration**: Moving from PostgreSQL to NoSQL because "SQL doesn't scale", only to reimplement transactions, joins, and consistency checks badly in application code.
 
 ## Key Takeaways
-- Foundational architectural trade-offs define relational databases: acid, transactions, and the write-ahead log.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+- Relational databases guarantee ACID correctness.
+- The **Write-Ahead Log (WAL)** guarantees durability; random disk page flushes happen asynchronously in the background.
+- Never make external network calls inside an active database transaction.
 
 ## Common Interview Questions
-1. How does relational databases: acid, transactions, and the write-ahead log impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing relational databases: acid, transactions, and the write-ahead log?
-3. How do you scale relational databases: acid, transactions, and the write-ahead log under 10x traffic spikes?
+1. How does the Write-Ahead Log (WAL) guarantee durability before data pages are written to disk?
+2. What are the three phases of the ARIES crash recovery algorithm?
+3. Why are long-running database transactions hazardous to database health?
 
 ## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- [C. Mohan et al.: ARIES: A Transaction Recovery Method (ACM TODS, 1992)](https://dl.acm.org/doi/10.1145/128765.128770)
+- [PostgreSQL Documentation: Chapter 30 - Reliability and the Write-Ahead Log](https://www.postgresql.org/docs/current/wal-intro.html)

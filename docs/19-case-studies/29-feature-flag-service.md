@@ -1,80 +1,55 @@
-# Design a Distributed Feature Flag and Dynamic Configuration Service
+# Design a Distributed Feature Flag Service (LaunchDarkly)
 
-> **System Scope**: Mission-critical feature management system delivering real-time feature toggles and percentage rollouts to millions of client SDKs.
-> Features local in-memory SDK rule evaluation, SHA256 deterministic rollout hashing, and Server-Sent Events (SSE) streaming updates.
+A low-latency, mission-critical feature flagging and configuration streaming platform capable of evaluating flags locally in-memory ($< 0.01	ext{ms}$) across thousands of microservices with real-time updates pushed within seconds.
+
+```mermaid
+graph TD
+    Admin[Engineering / Product Admin] --> Dashboard[Feature Flag Console]
+    Dashboard --> FlagDB[(Flag Rules DB: PostgreSQL)]
+    FlagDB --> StreamMgr[Streaming Control Plane]
+    
+    StreamMgr -->|SSE / WebSockets Server-Sent Events| EdgeApp1[App Pod 1: Local In-Memory Cache]
+    StreamMgr -->|SSE / WebSockets Server-Sent Events| EdgeApp2[App Pod 2: Local In-Memory Cache]
+    StreamMgr -->|SSE / WebSockets Server-Sent Events| EdgeAppN[App Pod N: Local In-Memory Cache]
+
+    IncomingReq[User HTTP Request] --> EdgeApp1
+    EdgeApp1 -->|0.005ms Pure In-Memory Hash Evaluation| Response[Serve Feature A or B]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a distributed feature flag and dynamic configuration service supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a distributed feature flag and dynamic configuration service.
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Boolean toggles and multivariate feature flags.
+2. Percentage-based gradual rollouts (e.g., enable for 10% of users).
+3. Contextual targeting rules (e.g., `country == 'CA' AND app_version >= '2.4.0'`).
+4. Real-time updates delivered to all microservices within 2 seconds.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Ultra-Low Evaluation Latency**: In-memory evaluation $< 0.01	ext{ms}$ (must never make network calls during request paths).
+- **High Resilience**: If control plane goes down, application pods keep using cached rules safely.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Deterministic Bucketing Algorithm (Consistent Hashing)
 
-## 4. API Design
-```http
-POST /api/v1/a-distributed-feature-flag-and-dynamic-configuration-service
-Content-Type: application/json
-Idempotency-Key: <uuid>
+To ensure User 42 consistently stays in the 10% rollout bucket:
+$$	ext{Bucket} = 	ext{MurmurHash3}(	ext{user\_id} + "	ext{flag\_key}") \pmod{100}$$
+If the rollout threshold is 25%, any user whose bucket value is $< 25$ receives the new feature. As the rollout increases to 50%, all previously enabled users remain enabled without storing state in a database!
 
-{
-  "request_payload": "value"
-}
-```
+---
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+## 3. Real-Time Streaming via Server-Sent Events (SSE)
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Distributed Feature Flag and Dynamic Configuration Service Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
+Application SDKs maintain a persistent HTTP Server-Sent Events (SSE) connection to the control plane.
+- When an operator flips a flag in the dashboard, the control plane broadcasts a small JSON delta payload over the SSE stream.
+- The SDK updates its internal in-memory hash map instantly with zero container restarts.
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 4. Key Takeaways
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Never evaluate feature flags via remote HTTP calls; always evaluate locally in RAM using SDK-managed caches.
+- Use MurmurHash3 for deterministic, stateless percentage rollouts.
+- Push configuration updates using Server-Sent Events (SSE).

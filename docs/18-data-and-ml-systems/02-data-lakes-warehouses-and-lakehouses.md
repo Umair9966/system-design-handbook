@@ -1,53 +1,44 @@
-# Data Lakes, Cloud Warehouses, and the Lakehouse Architecture
+# Data Lakes, Warehouses, and the Lakehouse Architecture
 
-> **Summary**: Traces the evolution from unstructured Data Lakes (S3) and Cloud Data Warehouses (Snowflake, BigQuery) to Lakehouses.
-> Examines open table formats: Apache Iceberg, Delta Lake, and Apache Hudi (ACID on object storage, time travel).
+Modern analytical architectures have converged from siloed data warehouses and unstructured data lakes into unified **Lakehouse** platforms (Delta Lake, Apache Iceberg, Apache Hudi).
+
+```mermaid
+graph TD
+    subgraph "Evolution of Data Architectures"
+        DW[1. Data Warehouse: Fast SQL, Structured only, High Cost]
+        DL[2. Data Lake: Cheap S3 Storage, All Formats, No ACID, 'Data Swamp']
+        LH[3. Lakehouse: ACID Transactions + Parquet Open Formats + S3 Pricing]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of data lakes, cloud warehouses, and the lakehouse architecture.
+## 1. The Lakehouse Revolution (Apache Iceberg & Delta Lake)
 
-## Why It Matters
-TBD: The operational and engineering problems data lakes, cloud warehouses, and the lakehouse architecture solves at scale.
+```mermaid
+graph TD
+    subgraph "Lakehouse Architecture"
+        Engines[Query Engines: Spark, Trino, Presto, DuckDB, Snowflake]
+        TableFormat[Table Format Layer: Apache Iceberg / Delta Lake<br/>Metadata Files, Snapshots, Manifest Lists]
+        FileFormat[Columnar Data Files: Apache Parquet (Zstd)]
+        Storage[Cloud Object Storage: AWS S3 / Google Cloud Storage]
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+        Engines --> TableFormat
+        TableFormat --> FileFormat
+        FileFormat --> Storage
+    end
+```
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+### Superpowers of the Lakehouse:
+1. **ACID Transactions on Object Storage**: Serializable snapshot isolation on top of cloud object storage (S3).
+2. **Time Travel & Rollbacks**: Query historical snapshots (`SELECT * FROM table TIMESTAMP AS OF '2026-09-01'`).
+3. **Partition Evolution**: Modify partition schemes without rewriting billions of underlying Parquet files.
+4. **Zero Vendor Lock-in**: Parquet data files on S3 can be queried simultaneously by Snowflake, Trino, Databricks, and Python.
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+---
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+## 2. Key Takeaways
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
-
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define data lakes, cloud warehouses, and the lakehouse architecture.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does data lakes, cloud warehouses, and the lakehouse architecture impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing data lakes, cloud warehouses, and the lakehouse architecture?
-3. How do you scale data lakes, cloud warehouses, and the lakehouse architecture under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Adopt open table formats (**Apache Iceberg** or Delta Lake) to combine S3 economics with database ACID reliability.
+- Use columnar formats (**Apache Parquet**) with Zstd compression for analytical query performance.
+- Decouple compute from storage to scale query clusters and storage capacity independently.

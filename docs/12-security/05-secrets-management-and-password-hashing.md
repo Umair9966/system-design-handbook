@@ -1,53 +1,45 @@
-# Secrets Management and Password Hashing Algorithms
+# Secrets Management and Password Hashing
 
-> **Summary**: Details secure password hashing: Argon2id, bcrypt, and PBKDF2 with unique cryptographic salts.
-> Covers enterprise secrets management (HashiCorp Vault, AWS Secrets Manager) and automated credential rotation.
+Hardcoded API keys, exposed database passwords, and obsolete password hashing algorithms (MD5, SHA1) are leading causes of severe data breaches.
+
+```mermaid
+graph TD
+    subgraph "Dangerous Anti-Pattern"
+        Code[Git Repo / Source Code] --> Hardcoded[Hardcoded API Key / DB Password]
+        Hardcoded --> Leak[Committed to Public GitHub -> Compromised in Seconds!]
+    end
+
+    subgraph "Production Secrets Management"
+        Pod[App Container] --> Agent[Vault / AWS Secrets Manager Agent]
+        Agent --> DynamicCreds[Short-Lived Ephemeral Database Credentials (1h TTL)]
+        DynamicCreds --> DB[(PostgreSQL)]
+        Agent --> AutoRotate[Automated Credential Rotation every 30 days]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of secrets management and password hashing algorithms.
+## 1. Password Hashing: Argon2id, bcrypt, and PBKDF2
 
-## Why It Matters
-TBD: The operational and engineering problems secrets management and password hashing algorithms solves at scale.
+General cryptographic hash functions (SHA-256, SHA-512) are designed to be extremely fast. On modern GPUs, attackers can calculate billions of SHA-256 hashes per second, cracking passwords via brute-force within hours.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### Password Hashes Must Be Slow and Memory-Hard:
+1. **Argon2id (Winner of Password Hashing Competition)**: The gold standard. Resists both GPU and ASIC parallel cracking by requiring significant RAM allocation per hash.
+2. **bcrypt**: Battle-tested industry standard with adjustable work factor (cost). Recommended cost $\ge 12$.
+3. **Always Use Unique Salts**: Random 16-byte salt per user prevents Rainbow Table attacks.
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Secrets Management Best Practices
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+- **Never Commit Secrets to Git**: Use pre-commit hooks (`gitleaks`, `trufflehog`) to block secrets from reaching repositories.
+- **Dynamic Ephemeral Credentials**: HashiCorp Vault generates temporary database credentials with 1-hour TTLs; compromised credentials expire automatically.
+- **Secrets Injection**: Inject secrets into memory via environment variables or in-memory mounted volumes (`/dev/shm`), never writing them to persistent container disks.
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define secrets management and password hashing algorithms.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does secrets management and password hashing algorithms impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing secrets management and password hashing algorithms?
-3. How do you scale secrets management and password hashing algorithms under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Always hash passwords with Argon2id or bcrypt (cost $\ge 12$) with a unique cryptographic salt.
+- Never store secrets in source code, Docker images, or unencrypted config files.
+- Automate secrets rotation and use short-lived ephemeral credentials.

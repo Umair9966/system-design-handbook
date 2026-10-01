@@ -1,53 +1,53 @@
 # Feature Flags and Progressive Delivery
 
-> **Summary**: Decoupling code deployment from feature release using dynamic feature toggles (LaunchDarkly, Unleash).
-> Details percentage rollouts, user targeting rules, kill switches, and preventing technical debt from stale flags.
+Progressive Delivery decouples code deployment from feature release. Deploying code to production is an engineering event; releasing functionality to users is a business decision.
+
+```mermaid
+graph LR
+    Deploy[Deploy Code to Production (Flags Off)] --> Internal[1. Internal Employees (Dogfooding)]
+    Internal --> Beta[2. Beta Testers (1%)]
+    Beta --> Canary[3. Canary Percentage Rollout (10% -> 50%)]
+    Canary --> GA[4. General Availability (100%)]
+    Canary -.->|Anomaly Detected!| KillSwitch[Emergency Kill Switch: 0% Instantly]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of feature flags and progressive delivery.
+## 1. Feature Flag Architecture
 
-## Why It Matters
-TBD: The operational and engineering problems feature flags and progressive delivery solves at scale.
+Feature flag evaluations must happen in-memory in microseconds without making a remote network call per evaluation:
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+```mermaid
+graph TD
+    Dashboard[LaunchDarkly / Unleash Admin Dashboard] --> FlagStream[SSE / WebSocket Config Stream]
+    FlagStream --> LocalCache[In-Memory Flag Cache inside App SDK]
+    AppCode[Incoming User Request] --> Eval[SDK.evaluate('new-ui', userContext)]
+    Eval --> LocalCache
+    LocalCache -->|0.001ms In-Memory Hash| Decision{Flag Enabled?}
+```
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Contextual Targeting and Gradual Rollouts
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+Feature flags use deterministic hashing (e.g., MurmurHash3) to ensure a user consistently receives the same feature experience:
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+$$	ext{Bucket} = 	ext{MurmurHash3}(	ext{user\_id} + "	ext{new\_checkout}") \pmod{100}$$
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+If the rollout percentage is set to 25%, any user whose hash bucket is $< 25$ receives the new feature. As the slider increases to 50%, previously enabled users remain enabled without state synchronization.
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+---
 
-## Key Takeaways
-- Foundational architectural trade-offs define feature flags and progressive delivery.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+## 3. Managing Technical Debt of Stale Flags
 
-## Common Interview Questions
-1. How does feature flags and progressive delivery impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing feature flags and progressive delivery?
-3. How do you scale feature flags and progressive delivery under 10x traffic spikes?
+Feature flags are short-term loans. If not removed, they turn codebases into tangled spaghetti:
+1. **Flag Expiration / TTLs**: Assign every flag an owner and an expiration date (e.g., 30 days after 100% rollout).
+2. **Automated Flag Cleanup**: Use static analysis tools (e.g., Uber's Piranha) to automatically generate pull requests that delete obsolete feature flag if/else statements.
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+---
+
+## 4. Key Takeaways
+
+- Decouple deployment from release using feature flags to minimize deployment risk.
+- Evaluate flags locally in memory; never make synchronous HTTP calls to feature flag servers in the request path.
+- Treat feature flags as technical debt and schedule automated pruning after general release.

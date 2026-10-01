@@ -1,80 +1,56 @@
-# Design a Fault-Tolerant Distributed In-Memory Cache (Redis Cluster)
+# Design a Distributed Cache System (Redis Cluster / Memcached)
 
-> **System Scope**: Ultra-low latency in-memory data caching system providing horizontal partitioning and sub-millisecond key-value lookups.
-> Details hash slot partitioning (16,384 slots), master-replica replication, gossip cluster membership, and automated failover.
+A high-performance in-memory caching cluster providing sub-millisecond key-value operations, consistent hashing distribution, automated failover, and memory eviction policies.
+
+```mermaid
+graph TD
+    Client[Application Client] --> HashRing[Client Consistent Hash Ring]
+    HashRing --> Node1[Cache Shard 1 (Master)]
+    HashRing --> Node2[Cache Shard 2 (Master)]
+    HashRing --> Node3[Cache Shard 3 (Master)]
+
+    Node1 -.->|Async Replication| Replica1[Shard 1 Replica]
+    Node2 -.->|Async Replication| Replica2[Shard 2 Replica]
+    Node3 -.->|Async Replication| Replica3[Shard 3 Replica]
+
+    Consensus[Sentinel / Raft Supervisor] --> Node1
+    Consensus --> Node2
+    Consensus --> Node3
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a fault-tolerant distributed in-memory cache (redis cluster) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a fault-tolerant distributed in-memory cache (redis cluster).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. `get(key)` and `set(key, value, ttl)`.
+2. Support eviction algorithms: LRU, LFU, FIFO.
+3. Automated key expiration via TTLs.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Sub-Millisecond Latency**: p99 $< 1	ext{ms}$.
+- **Horizontal Scalability**: Add or remove cache nodes dynamically with minimal cache misses.
+- **High Availability**: Automated replica promotion on node failure.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Consistent Hashing with Virtual Nodes
 
-## 4. API Design
-```http
-POST /api/v1/a-fault-tolerant-distributed-in-memory-cache-(redis-cluster)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Keys are mapped to a 32-bit integer ring ($0$ to $2^{32}-1$):
+- Each physical node is assigned 256 virtual positions on the ring (`Hash("node1#1")`, `Hash("node1#2")`).
+- When a new cache node is added, it claims keys only from its immediate clockwise neighbors, avoiding full cluster cache flushes.
 
-{
-  "request_payload": "value"
-}
-```
+---
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
+## 3. Memory Eviction: Approximated LRU in Redis
 
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Fault-Tolerant Distributed In-Memory Cache (Redis Cluster) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
-```
+Tracking true global LRU across 100 Million keys requires double-linked list pointers that consume excessive RAM (16 bytes per key).
+- **Redis Approximated LRU**: Samples 5 random keys, inspects their idle times, and evicts the oldest key among the sample. At sample size 10, performance is mathematically indistinguishable from true LRU at zero memory overhead!
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 4. Key Takeaways
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
-
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Distribute cache keys using Consistent Hashing with virtual nodes.
+- Use Approximated LRU sampling to save memory overhead.
+- Employ Master-Replica pairs with automated failover (Redis Sentinel / Cluster gossip).

@@ -1,80 +1,73 @@
-# Design a Scalable Video Conferencing Platform (Zoom/Google Meet)
+# Design a Real-Time Video Conferencing Platform (Zoom / Google Meet)
 
-> **System Scope**: Real-time audio and video communications platform supporting multi-party group video calls with low packet latency.
-> Details WebRTC media transport, Selective Forwarding Unit (SFU) vs MCU architectures, signaling servers, and bandwidth adaptation.
+A low-latency, multi-party video conferencing architecture supporting 1,000+ participants per call, screen sharing, audio/video mixing, and adaptive bitrate encoding with sub-200ms glass-to-glass latency.
+
+```mermaid
+graph TD
+    Participant1[Participant 1] -->|WebRTC UDP: SRTP Video/Audio| SFU[Selective Forwarding Unit - SFU]
+    Participant2[Participant 2] -->|WebRTC UDP: SRTP Video/Audio| SFU
+    Participant3[Participant 3] -->|WebRTC UDP: SRTP Video/Audio| SFU
+
+    SFU --> Transcoder[Simulcast Quality Controller]
+    
+    SignalingSvc[Signaling Service: WebSocket SDP & ICE] <--> Participant1
+    SignalingSvc <--> Participant2
+    SignalingSvc <--> SFU
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a scalable video conferencing platform (zoom/google meet) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a scalable video conferencing platform (zoom/google meet).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Multi-party real-time audio and video calls (up to 1,000 participants).
+2. Screen sharing and real-time text chat.
+3. Call recording and cloud storage.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Ultra-Low Latency**: End-to-end glass-to-glass latency $< 150	ext{ms}$.
+- **Adaptive Quality**: Smooth video playback across unstable cellular connections.
+- **Resilience**: Handle 15% network packet loss without audio breakup.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Media Routing Topologies: Mesh vs MCU vs SFU
 
-## 4. API Design
-```http
-POST /api/v1/a-scalable-video-conferencing-platform-(zoom/google-meet)
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Scalable Video Conferencing Platform (Zoom/Google Meet) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    subgraph "1. Mesh (P2P - Max 4 Participants)"
+        M1[Client A] <--> M2[Client B]
+        M1 <--> M3[Client C]
+        M2 <--> M3
+        Note over M1: O(N^2) bandwidth! Saturates client upload.
+    end
+
+    subgraph "2. SFU (Selective Forwarding Unit - Zoom Standard)"
+        C1[Client 1] -->|1 Upload| SFU_Node[SFU Media Server]
+        C2[Client 2] -->|1 Upload| SFU_Node
+        SFU_Node -->|Forwards Streams| C1
+        SFU_Node -->|Forwards Streams| C2
+        Note over SFU_Node: Zero transcoding CPU! Routes raw UDP packets directly!
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### Why the Industry Standard is SFU:
+- **Multipoint Control Unit (MCU)**: Decodes and mixes all video streams into a single composite video on the server. Consumes massive CPU and introduces 200ms+ latency.
+- **Selective Forwarding Unit (SFU)**: Receives video streams from each client and selectively forwards them to other participants without decoding or re-encoding. Server CPU remains low, and latency is $< 30	ext{ms}$!
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Simulcast for Dynamic Bandwidth Adaptation
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+Each client encodes video into **3 simultaneous resolutions** (e.g., 720p, 360p, 180p):
+- The SFU intelligently forwards the **720p stream** for the active speaker.
+- The SFU forwards **180p thumbnail streams** for the other 25 participants in gallery view.
+- If a mobile user enters a poor connection, the SFU automatically downgrades their incoming stream to 180p without impacting other callers.
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 4. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Standardize on WebSockets for Signaling (SDP/ICE negotiation) and WebRTC over UDP for Media transport.
+- Use Selective Forwarding Units (SFUs) to support multi-party video conferencing without server transcoding bottlenecks.
+- Implement Simulcast so clients receive high-resolution feeds only for the active speaker.

@@ -1,80 +1,69 @@
-# Design a Real-Time Ride-Hailing Service (Uber/Lyft)
+# Design a Ride-Hailing Platform (Uber / Lyft)
 
-> **System Scope**: High-concurrency spatial dispatch platform matching nearby drivers with riders in real time.
-> Details Google S2 / Geohash spatial cell indexing, real-time driver GPS tracking, surge pricing, and ETA routing engines.
+A real-time geospatial dispatch and location-tracking system capable of tracking millions of active drivers, matching riders to nearby drivers, dynamic surge pricing, and trip routing.
+
+```mermaid
+graph TD
+    Driver[Driver App] -->|WebSocket: Lat/Lng every 4s| LocationGW[Location Ingress Gateway]
+    LocationGW --> GeoCache[(Geospatial Cache: Redis / Uber H3 Grid)]
+    
+    Rider[Rider App] -->|POST /rides/request| RideSvc[Ride Matching Service]
+    RideSvc --> GeoCache
+    RideSvc --> DispatchEngine[Dispatch & Route Optimizer]
+    DispatchEngine --> MatchQueue[Driver Notification Engine]
+    MatchQueue --> Driver
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a real-time ride-hailing service (uber/lyft) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a real-time ride-hailing service (uber/lyft).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Real-time driver location updates (every 4 seconds).
+2. Rider requests ride: Find top $K$ nearest available drivers within 3 km.
+3. Driver dispatch: Offer ride to selected driver; handle accept/decline timeout (15s).
+4. Dynamic Surge Pricing: Increase fares in high-demand, low-supply geographic hexagons.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Low Latency**: Driver search & matching $< 1	ext{ second}$.
+- **Massive Write QPS**: Ingesting location pings from 2 Million active drivers.
+- **High Availability**: Service survives regional outages without stranding in-progress trips.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Geospatial Indexing: Uber H3 Hexagonal Grid
 
-## 4. API Design
-```http
-POST /api/v1/a-real-time-ride-hailing-service-(uber/lyft)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+- The world is mapped into **H3 Hexagonal Hierarchical Cells** (Resolution 8 $pprox 460	ext{m}$ edge length).
+- Every driver's GPS coordinate maps to an `H3Index` (64-bit integer).
+- In Redis, active drivers are stored in an in-memory set indexed by Hexagon ID:
+  ```
+  SADD drivers:hex:882681a339fffff driver_101
+  ```
+- **Radius Search**: Look up the rider's home hexagon + its 6 immediate neighboring hexagons to find all drivers within seconds!
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Real-Time Ride-Hailing Service (Uber/Lyft) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    RiderHex[Rider in Hexagon 0] --> N1[Neighbor Hex 1]
+    RiderHex --> N2[Neighbor Hex 2]
+    RiderHex --> N3[Neighbor Hex 3]
+    RiderHex --> N4[Neighbor Hex 4]
+    RiderHex --> N5[Neighbor Hex 5]
+    RiderHex --> N6[Neighbor Hex 6]
+    Note over RiderHex,N6: All 7 hexagons queried in parallel in Redis in < 2ms!
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. High-Throughput Write Path: Location Buffering
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+- 2 Million drivers pinging every 4 seconds $\implies \mathbf{500,000	ext{ write QPS}}$.
+- Writing 500,000 updates directly to disk databases will destroy I/O throughput.
+- **Solution**: Keep live driver locations **strictly in RAM (Redis / Memory)**. Only persist trip start, pickup, and completion events to persistent PostgreSQL storage.
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+---
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+## 4. Key Takeaways
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Partition geospatial space using Uber H3 hexagonal cells for uniform neighbor distances.
+- Store real-time transient location coordinates purely in in-memory caches (Redis).
+- Implement a two-phase dispatch state machine with lease timeouts to prevent race conditions between riders claiming the same driver.

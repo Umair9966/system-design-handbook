@@ -1,53 +1,60 @@
 # SLIs, SLOs, SLAs, and Error Budgets
 
-> **Summary**: Site Reliability Engineering (SRE) measurement: Service Level Indicators, Objectives, and Agreements.
-> Details error budget calculations, burn rate alerting, and balancing feature velocity against reliability freezes.
+Site Reliability Engineering (SRE), pioneered by Google, aligns product engineering velocity with system reliability using mathematical error budgets.
+
+```mermaid
+graph TD
+    SLI[SLI: Service Level Indicator<br/>What is the actual measured metric?]
+    SLO[SLO: Service Level Objective<br/>What is our internal target goal?]
+    SLA[SLA: Service Level Agreement<br/>What is our contractual commitment to customers?]
+    EB[Error Budget<br/>100% - SLO: The allowed unreliability budget]
+
+    SLI -->|Evaluated against| SLO
+    SLO -->|Tighter than| SLA
+    SLO -->|Calculates| EB
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of slis, slos, slas, and error budgets.
+## 1. Definitions and Formulations
 
-## Why It Matters
-TBD: The operational and engineering problems slis, slos, slas, and error budgets solves at scale.
+### 1. Service Level Indicator (SLI)
+A quantifiable metric measuring service performance:
+$$	ext{SLI} = rac{	ext{Good Events}}{	ext{Total Events}} 	imes 100$$
+- *Example*: Percentage of HTTP requests returning `< 500` status within `200ms`.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### 2. Service Level Objective (SLO)
+The internal target reliability percentage set by engineering and product:
+- *Example*: "99.9% of checkout requests must succeed with latency < 300ms over a rolling 30-day window."
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+### 3. Service Level Agreement (SLA)
+The legally binding contract with customers specifying financial penalties, service credits, or refunds if breached:
+- *Rule*: **SLA must always be more lenient than SLO!**
+  - SLO = $99.9\%$ (Internal alert fires)
+  - SLA = $99.0\%$ (Company pays customer penalty)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+---
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+## 2. The Error Budget: Balancing Velocity and Stability
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+An error budget is the inverse of an SLO:
+$$	ext{Error Budget} = 100\% - 	ext{SLO}$$
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+For a 99.9% SLO on 10,000,000 requests per month:
+$$	ext{Allowed Failures} = 10,000,000 	imes 0.001 = 10,000	ext{ requests}$$
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+```mermaid
+graph LR
+    subgraph "Error Budget Policy"
+        EB[Error Budget Remaining: 80%] -->|Green Light| FastDeploy[Feature Releases, Fast Experiments, Risky Changes]
+        EB2[Error Budget Exhausted: 0%!] -->|Red Light / Freeze| CodeFreeze[Feature Freeze! 100% Focus on Tech Debt & Reliability Fixes]
+    end
+```
 
-## Key Takeaways
-- Foundational architectural trade-offs define slis, slos, slas, and error budgets.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+---
 
-## Common Interview Questions
-1. How does slis, slos, slas, and error budgets impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing slis, slos, slas, and error budgets?
-3. How do you scale slis, slos, slas, and error budgets under 10x traffic spikes?
+## 3. Key Takeaways
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Measure SLIs as the ratio of good events over valid total events.
+- Never set a 100% SLO—100% reliability is economically unviable and stalls product innovation.
+- Use Error Budgets as an objective decision framework to resolve tension between product development speed and operational stability.

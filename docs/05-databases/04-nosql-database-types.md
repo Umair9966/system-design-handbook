@@ -1,53 +1,71 @@
 # NoSQL Database Types: Key-Value, Document, Wide-Column, Graph, and Time-Series
 
-> **Summary**: Systematic taxonomy of non-relational databases and their internal storage optimizations.
-> Examines DynamoDB (KV), MongoDB (Document), Cassandra (Wide-Column), Neo4j (Graph), and TimescaleDB.
-
----
-
 ## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of nosql database types: key-value, document, wide-column, graph, and time-series.
+**NoSQL ("Not Only SQL")** databases emerged to handle massive horizontal scalability, high write velocities, flexible schemas, and specialized data structures that traditional relational databases struggle to accommodate. NoSQL spans five distinct architectural families:
+1. **Key-Value Stores**: Simplest data model; maps unique keys to arbitrary binary payloads (Redis, DynamoDB).
+2. **Document Databases**: Stores semi-structured hierarchical JSON/BSON documents (MongoDB, Couchbase).
+3. **Wide-Column Stores**: Multi-dimensional sparse matrices indexed by row, column family, and timestamp (Cassandra, ScyllaDB, HBase).
+4. **Graph Databases**: Stores nodes, edges, and properties optimized for relationship traversal (Neo4j, Amazon Neptune).
+5. **Time-Series Databases**: Optimized for sequential timestamped append-only telemetry (TimescaleDB, InfluxDB).
+
+```mermaid
+graph TD
+    NoSQL[NoSQL Taxonomy]
+    NoSQL --> KV[1. Key-Value: Redis / DynamoDB]
+    NoSQL --> Doc[2. Document: MongoDB]
+    NoSQL --> WC[3. Wide-Column: Cassandra / ScyllaDB]
+    NoSQL --> Graph[4. Graph: Neo4j / Neptune]
+    NoSQL --> TS[5. Time-Series: TimescaleDB / InfluxDB]
+```
 
 ## Why It Matters
-TBD: The operational and engineering problems nosql database types: key-value, document, wide-column, graph, and time-series solves at scale.
+Attempting to query 6 degrees of social network relationships in a relational database requires dozens of self-joins that crash the query planner. Conversely, using a graph database for financial accounting ledgers is an operational disaster. Matching data access patterns to the correct storage model is a staff-level engineering skill.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## Detailed Comparison Across the 5 Families
+| Family | Representative Tech | Data Model | Primary Query Pattern | Scaling Model |
+| :--- | :--- | :--- | :--- | :--- |
+| **Key-Value** | Redis, DynamoDB | `Key -> Blob` | Lookup by primary key ($O(1)$) | Consistent hashing |
+| **Document** | MongoDB, Couchbase | JSON / BSON | Nested attribute filters, secondary indexes | Sharded clusters |
+| **Wide-Column**| Cassandra, ScyllaDB | `Row -> ColFamily -> Value`| Partition key + clustering key range scans | Masterless peer-to-peer ring |
+| **Graph** | Neo4j, Neptune | Nodes & Directed Edges | Pointer chasing ($O(1)$ graph traversal)| Typically single-master / read replicas |
+| **Time-Series**| TimescaleDB, InfluxDB | Timestamp + Metrics + Tags | Time-window aggregations (rollups) | Time-based chunk partitioning |
 
 ## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
+| Database Family | Strengths | Weaknesses |
 | :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+| **Wide-Column (Cassandra)** | Linear write scaling, zero single point of failure | No joins, queries must be designed upfront per table |
+| **Document (MongoDB)** | Developer ergonomics, flexible evolving schemas | Cross-document transactions are slow; memory-heavy |
+| **Graph (Neo4j)** | Million-hop relationship queries in milliseconds | Difficult to shard horizontally across machines |
+| **Key-Value (Redis)** | Sub-millisecond latency, extreme simplicity | Cannot query by internal value attributes |
 
 ## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+### When to Choose Wide-Column (Cassandra)
+- Massive write-heavy workloads (e.g., messaging message history, IoT metrics, Discord message storage) requiring petabyte scale across hundreds of nodes.
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+### When to Choose Graph (Neo4j)
+- Social network friend recommendations, fraud detection rings, identity and access management (IAM) permission trees.
+
+### When to Choose Document (MongoDB)
+- User catalogs, content management platforms, rapid prototyping where object schemas change weekly.
 
 ## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+- **Discord Message Storage**: Migrated billions of chat messages from MongoDB to **Apache Cassandra**, and subsequently to **ScyllaDB**, utilizing wide-column storage to sustain billions of daily message writes without locks.
+- **Uber Knowledge Graph**: Utilizes graph data modeling to map physical road networks, traffic constraints, and driver-rider proximity relationships.
 
 ## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+- **Using Cassandra Like a Relational DB**: Attempting to run ad-hoc queries with `ALLOW FILTERING` in Cassandra, scanning entire distributed clusters and causing massive CPU timeouts.
+- **Unbounded Document Growth in MongoDB**: Embedding unbounded arrays (e.g., embedding all comments inside a single blog post document), hitting MongoDB's 16MB document size limit and forcing expensive disk reallocations.
 
 ## Key Takeaways
-- Foundational architectural trade-offs define nosql database types: key-value, document, wide-column, graph, and time-series.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+- NoSQL is not a single technology; it is a suite of specialized data models.
+- **Cassandra** is king for massive, linearly scalable write throughput.
+- **Graph databases** solve relationship traversal via index-free adjacency.
 
 ## Common Interview Questions
-1. How does nosql database types: key-value, document, wide-column, graph, and time-series impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing nosql database types: key-value, document, wide-column, graph, and time-series?
-3. How do you scale nosql database types: key-value, document, wide-column, graph, and time-series under 10x traffic spikes?
+1. Why does Cassandra scale writes horizontally better than traditional relational databases?
+2. What is "index-free adjacency" in graph databases, and why does it make relationship queries so fast?
+3. How does wide-column storage differ from traditional relational row storage?
 
 ## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- [Avinash Lakshman and Prashant Malik: Cassandra - A Decentralized Structured Storage System (ACM SIGOPS, 2010)](https://www.cs.cornell.edu/projects/ladis2009/papers/lakshman-ladis2009.pdf)
+- [Neo4j Graph Database Concepts](https://neo4j.com/docs/getting-started/current/)

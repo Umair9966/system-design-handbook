@@ -1,53 +1,42 @@
-# DDoS Protection and Web Application Firewalls (WAF)
+# DDoS Mitigation and Web Application Firewalls (WAF)
 
-> **Summary**: Analyzes L3/L4 volumetric attacks (SYN flood, UDP amplification) and L7 application attacks (HTTP floods, slowloris).
-> Details Anycast traffic scrubbing networks, rate limiting at edge, challenge-response mechanisms, and WAF rules.
+Distributed Denial of Service (DDoS) attacks attempt to exhaust network bandwidth, connection state tables, or application compute capacity.
+
+```mermaid
+graph TD
+    Attackers[Botnet / Attack Traffic] --> Edge[Anycast Edge Network: Cloudflare / CloudFront]
+    Edge --> L34[Layer 3/4 Scrubbing: SYN Flood, UDP Amplification]
+    L34 --> WAF[Layer 7 WAF: Rate Limiting, Bot Detection, Managed Rules]
+    WAF --> CleanTraffic[Clean Traffic]
+    CleanTraffic --> Origin[Origin Application Servers]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of ddos protection and web application firewalls (waf).
+## 1. Layers of DDoS Attacks
 
-## Why It Matters
-TBD: The operational and engineering problems ddos protection and web application firewalls (waf) solves at scale.
+- **Layer 3 / 4 (Network & Transport)**:
+  - *SYN Flood*: Floods server with TCP SYN packets without completing the 3-way handshake, exhausting kernel backlog connection queues.
+  - *UDP Amplification*: Spoofs victim IP and sends requests to vulnerable open DNS/NTP servers, generating 50x amplified response floods.
+  - *Mitigation*: Anycast BGP routing distributes floods across hundreds of global PoPs; SYN cookies absorb incomplete handshakes.
+- **Layer 7 (Application Layer)**:
+  - *HTTP Flood*: High-volume legitimate-looking `GET` or `POST` requests targeting heavy database search queries.
+  - *Slowloris*: Sends HTTP headers extremely slowly (1 byte every 10 seconds), keeping server worker sockets open indefinitely until thread pools exhaust.
+  - *Mitigation*: Web Application Firewalls (WAF), CAPTCHA challenges, strict socket read timeouts, and IP reputation scores.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Web Application Firewall (WAF) Architecture
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+WAFs inspect incoming HTTP traffic before it reaches origin servers:
+1. **Signature-Based Inspection**: Blocks known SQL injection patterns (`UNION SELECT`) and cross-site scripting (`<script>`).
+2. **Rate Limiting Rules**: Automatically block or challenge IPs exceeding 100 requests per minute to sensitive endpoints (`/login`, `/checkout`).
+3. **Geo-Blocking & ASN Filtering**: Blocks traffic originating from unauthorized countries or suspicious data center ASNs.
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. Key Takeaways
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define ddos protection and web application firewalls (waf).
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does ddos protection and web application firewalls (waf) impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing ddos protection and web application firewalls (waf)?
-3. How do you scale ddos protection and web application firewalls (waf) under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Absorb Layer 3 and 4 floods at the edge using Anycast and cloud scrubbing networks.
+- Protect expensive Layer 7 endpoints with WAF rate limiting and managed rulesets.
+- Enforce strict connection and read timeouts on reverse proxies to neutralize Slowloris attacks.

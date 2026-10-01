@@ -1,80 +1,59 @@
-# Design a Secure Online Programming Judge (LeetCode)
+# Design an Online Code Judge (LeetCode / HackerRank)
 
-> **System Scope**: Code execution sandbox evaluating untrusted user-submitted code in multiple programming languages against test suites.
-> Implements secure containerized isolation (gVisor/cgroups), strict CPU/RAM/syscall limits, timeout watchdogs, and result scoring.
+A secure, isolated code execution and grading engine capable of compiling, running, and benchmarking arbitrary untrusted user code (Python, C++, Java, Rust) against hidden test suites with strict CPU, memory, and security sandboxing.
+
+```mermaid
+graph TD
+    User[Student / Candidate] --> API[Submission API]
+    API --> MetaDB[(Submissions DB: PostgreSQL)]
+    API --> Queue[Kafka / SQS Job Queue]
+    
+    Queue --> JudgeWorker[Judge Coordinator Worker]
+    JudgeWorker --> Sandbox[Isolated Linux Sandbox: gVisor / Firecracker / Docker]
+    
+    Sandbox -->|Executes Code against Test Cases| TestCases[(Test Case Store: S3)]
+    Sandbox --> JudgeWorker
+    JudgeWorker --> ResultStore[(Results: Accepted / TLE / Memory Limit)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a secure online programming judge (leetcode) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a secure online programming judge (leetcode).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Submit code in multiple languages (Python, Java, C++, Go).
+2. Execute code against hidden test cases.
+3. Return grading status: Accepted (AC), Wrong Answer (WA), Time Limit Exceeded (TLE), Memory Limit Exceeded (MLE), Runtime Error (RE).
+4. Measure exact execution runtime and memory usage.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Security**: **Untrusted user code must NEVER escape the sandbox or access internal cloud networks**.
+- **Fairness & Determinism**: Consistent execution timing across runs.
+- **High Throughput**: Handle 1,000 concurrent submissions during coding competitions.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Sandboxing Architecture: Preventing Remote Code Execution (RCE)
 
-## 4. API Design
-```http
-POST /api/v1/a-secure-online-programming-judge-(leetcode)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Running arbitrary user code (`os.system("rm -rf /")` or `curl 169.254.169.254`) on a host VM is dangerous.
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Secure Online Programming Judge (LeetCode) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    UserCode[Untrusted User Code] --> Cgroups[Linux Cgroups: Hard CPU & RAM Limits]
+    Cgroups --> Seccomp[Seccomp: Blocks Network & Fork Syscalls]
+    Seccomp --> MicroVM[gVisor / Firecracker MicroVM: User-Space Kernel Isolation]
+    MicroVM --> HostOS[Host Linux OS (Protected!)]
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### Security Layers:
+1. **Linux Cgroups v2**: Enforces strict memory caps (e.g., 256MB) and CPU quotas (e.g., 1 CPU core).
+2. **Seccomp Filters**: Whitelists only safe syscalls (`read`, `write`, `exit`). **Blocks network sockets (`socket`, `connect`) and process forks (`fork`, `clone`) to prevent fork bombs**.
+3. **gVisor (Google)**: Intercepts all syscalls in a user-space sandbox, protecting the host Linux kernel from kernel privilege escalation exploits.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Key Takeaways
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Execute untrusted code inside multi-layered sandboxes (cgroups + seccomp + gVisor/Firecracker).
+- Block all network access at the kernel socket layer to prevent SSRF and external attacks.
+- Decouple code submission from grading execution using asynchronous message queues.

@@ -1,53 +1,47 @@
-# Live Video Streaming and Delivery: HLS, DASH, and WebRTC
+# Live Video Streaming Architecture: HLS, DASH, and WebRTC
 
-> **Summary**: Details the live streaming pipeline: video ingestion (RTMP/SRT), real-time transcoding, segmentation into chunks.
-> Compares HTTP Live Streaming (HLS) and Dynamic Adaptive Streaming (DASH) manifests against ultra-low-latency WebRTC.
+Live video distribution spans a strict trade-off between **ultra-low latency** (interactive bidding, gaming) and **massive global scale** (World Cup, Super Bowl).
+
+```mermaid
+graph LR
+    Source[Camera / Video Feed] --> Encoder[Hardware Encoder / RTMP]
+    Encoder --> Transcoder[Transcoding Service: Multi-bitrate H.264/AV1 Chunks]
+    Transcoder --> Packager[Packager: HLS (.m3u8 + .ts) / DASH (.mpd + .m4s)]
+    Packager --> S3[(Origin Storage / S3)]
+    S3 --> CDN[Global CDN Edge: Cloudflare / Akamai]
+    CDN --> Viewer1[Viewer Browser (HLS: 6s Latency)]
+    CDN --> Viewer2[Viewer TV / Mobile]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of live video streaming and delivery: hls, dash, and webrtc.
+## 1. Comparing Video Streaming Protocols
 
-## Why It Matters
-TBD: The operational and engineering problems live video streaming and delivery: hls, dash, and webrtc solves at scale.
+| Protocol | Transport | Latency | Scalability | Use Case |
+| :--- | :--- | :--- | :--- | :--- |
+| **WebRTC** | UDP (RTP/RTCP) | < 500ms (Sub-second) | Low to Moderate (Expensive peer/relay servers) | Zoom, Google Meet, live auctions, tele-health |
+| **Low-Latency HLS (LL-HLS)**| HTTP/2 or HTTP/3 | 1.5s - 3s | High (Standard CDN chunk caching) | Twitch, live sports, live concerts |
+| **Standard HLS / DASH** | HTTP/1.1 or HTTP/2 | 6s - 30s | Massive (Millions of viewers via edge CDNs) | Netflix, YouTube Live, broadcast sports |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Adaptive Bitrate Streaming (ABR)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Network bandwidth on mobile devices fluctuates continuously. ABR dynamically adjusts video quality without playback stalling:
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```mermaid
+graph TD
+    Client[Video Player Client] --> Monitor[Bandwidth Estimator]
+    Monitor -->|Bandwidth = 15 Mbps| High[Download 1080p Chunk (4 Mbps)]
+    Monitor -->|Cellular Drops to 2 Mbps| Med[Download 720p Chunk (1.5 Mbps)]
+    Monitor -->|Subway Tunnel: 500 Kbps| Low[Download 360p Chunk (300 Kbps)]
+    Note over Client: Video plays continuously with ZERO buffering spinners!
+```
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define live video streaming and delivery: hls, dash, and webrtc.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does live video streaming and delivery: hls, dash, and webrtc impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing live video streaming and delivery: hls, dash, and webrtc?
-3. How do you scale live video streaming and delivery: hls, dash, and webrtc under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Use WebRTC for two-way sub-second interactive video (Zoom, Discord voice).
+- Use HLS or DASH for one-to-many broadcast streaming to leverage commodity CDN edge caching.
+- Generate multi-bitrate profiles (ABR) during packaging to ensure continuous playback across changing client bandwidth.

@@ -1,80 +1,109 @@
-# Design a Text and Code Snippet Sharing Service (Pastebin)
+# Design a Scalable Pastebin Service
 
-> **System Scope**: Scalable text sharing platform supporting expiration policies, custom URLs, and syntax highlighting.
-> Separates high-volume text blob storage (S3) from fast metadata queries (PostgreSQL/MongoDB).
+A text-sharing service (similar to Pastebin or GitHub Gist) that allows users to upload plain text snippets, code, or logs, generating a unique URL for sharing, with optional password protection, syntax highlighting, and automatic TTL expiration.
+
+```mermaid
+graph TD
+    Client[Web / CLI Client] --> Edge[Cloudflare CDN]
+    Edge --> LB[Load Balancer]
+    LB --> API[Pastebin API Gateway]
+    API --> PasteSvc[Paste Service Pods]
+
+    PasteSvc --> S3[(Object Storage: S3 / MinIO - Raw Paste Text)]
+    PasteSvc --> DB[(Metadata DB: PostgreSQL / MongoDB)]
+    PasteSvc --> Cache[(Redis Cache: Hot Metadata & Pastes)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a text and code snippet sharing service (pastebin) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a text and code snippet sharing service (pastebin).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Users can upload a block of text (max 10MB) and receive a unique short URL.
+2. Users can view uploaded text via the short URL.
+3. Users can set expiration TTL (1 hour, 1 day, 1 week, never).
+4. Optional custom slug and password protection.
+5. Support raw text output (`/raw/:id`).
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Availability**: 99.99%.
+- **Read-to-Write Ratio**: 20:1 read-heavy.
+- **Latency**: P99 text read latency $< 30	ext{ms}$.
+- **Durability**: Pastes with no expiration must never be lost (99.999999999% object storage durability).
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Capacity Estimation & Storage Separation
 
-## 4. API Design
+- **Daily New Pastes**: 1 Million pastes/day.
+- **Average Paste Size**: 20 KB.
+- **Daily Ingress Storage**: $1	ext{M} 	imes 20	ext{ KB} = \mathbf{20	ext{ GB/day}}$.
+- **5-Year Storage**: $20	ext{ GB} 	imes 365 	imes 5 pprox \mathbf{36.5	ext{ Terabytes}}$.
+- **Write QPS**: $rac{1,000,000}{86,400} pprox \mathbf{12	ext{ pastes/sec}}$.
+- **Read QPS (20:1)**: $12 	imes 20 = \mathbf{240	ext{ reads/sec}}$ (Peak: $1,000	ext{ reads/sec}$).
+
+### Architectural Storage Separation:
+Storing 20KB text blobs inside relational database rows quickly fragments database pages and bloats B+Tree indexes.
+- **Metadata** (ID, author, expiration, hash, size) $	o$ **PostgreSQL / DynamoDB**.
+- **Raw Text Payload** $	o$ **AWS S3 Object Storage** (keyed by `paste_id`).
+
+---
+
+## 3. API & Data Model
+
 ```http
-POST /api/v1/a-text-and-code-snippet-sharing-service-(pastebin)
+POST /api/v1/pastes
 Content-Type: application/json
-Idempotency-Key: <uuid>
 
 {
-  "request_payload": "value"
+  "content": "SELECT * FROM users WHERE active = true;",
+  "language": "sql",
+  "expires_in_seconds": 86400,
+  "is_private": false
+}
+
+HTTP/1.1 201 Created
+{
+  "paste_id": "7f8b9a1c",
+  "url": "https://paste.example.com/7f8b9a1c",
+  "expires_at": "2026-10-02T20:00:00Z"
 }
 ```
 
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
-```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Text and Code Snippet Sharing Service (Pastebin) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+```sql
+CREATE TABLE paste_metadata (
+    paste_id VARCHAR(16) PRIMARY KEY,
+    user_id UUID,
+    s3_key VARCHAR(255) NOT NULL,
+    content_size_bytes INT NOT NULL,
+    language VARCHAR(32) DEFAULT 'text',
+    password_hash VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE
+);
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 4. Deep Dive: Automated Expiration & Garbage Collection
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+Pastes with expired TTLs should not remain in storage forever.
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+```mermaid
+graph TD
+    Cron[Scheduled Kubernetes CronJob: Every Hour] --> Query[Query: SELECT paste_id, s3_key FROM paste_metadata WHERE expires_at < NOW() LIMIT 5000]
+    Query --> S3Batch[Batch Delete from S3 Bucket]
+    S3Batch --> DBDelete[DELETE FROM paste_metadata WHERE paste_id IN (...)]
+    
+    subgraph Alternative: S3 Native Lifecycle
+        S3Object[S3 Object with Tag: 'TTL=7d'] --> S3Engine[S3 Lifecycle Engine Auto-Purges at 0 Cost!]
+    end
+```
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+---
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+## 5. Key Takeaways
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Decouple metadata (relational DB) from bulk text payload (S3 object storage).
+- Use Base62 sequence generation for unique, URL-safe 8-character paste identifiers.
+- Rely on S3 Lifecycle Policies for zero-compute automated expiration.

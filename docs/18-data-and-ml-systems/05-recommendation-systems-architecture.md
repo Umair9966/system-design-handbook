@@ -1,53 +1,37 @@
-# Recommendation System Architecture: Candidate Generation, Ranking, and Re-Ranking
+# Recommendation Systems Architecture (Two-Stage Retrieval & Ranking)
 
-> **Summary**: Deconstructs the classic 3-stage recommendation funnel serving millions of items to users in under 50ms.
-> Details Candidate Generation (two-tower retrieval), Deep Ranking models, Re-ranking for diversity, and feedback loops.
+Modern recommendation systems (YouTube, Netflix, TikTok, Instagram) recommend items from catalogs of billions of items within 50ms using the **Two-Stage Candidate Retrieval and Ranking** pattern.
+
+```mermaid
+graph TD
+    UserReq[User Opens App: 1 Billion Items in Catalog] --> Step1[1. Candidate Generation / Retrieval<br/>Reduces 1 Billion -> 1,000 Candidates<br/>Latency: 10ms | Light Vector Search (Two-Tower / HNSW)]
+    Step1 --> Step2[2. Scoring & Heavy Ranking<br/>Reduces 1,000 -> 50 Items<br/>Latency: 25ms | Deep Neural Network / GBDT]
+    Step2 --> Step3[3. Re-Ranking & Diversity Filtering<br/>Reduces 50 -> 10 Final Display Items<br/>Latency: 5ms | Business rules, deduplication, sponsored ads]
+    Step3 --> Output[User Screen: Top 10 Personalized Carousel]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of recommendation system architecture: candidate generation, ranking, and re-ranking.
+## 1. The Two-Stage Architecture Deep Dive
 
-## Why It Matters
-TBD: The operational and engineering problems recommendation system architecture: candidate generation, ranking, and re-ranking solves at scale.
+### Stage 1: Candidate Generation (Retrieval)
+- **Goal**: Coarsely filter millions/billions of items down to ~1,000 candidates.
+- **Technology**: **Two-Tower Neural Networks** (User Tower + Item Tower) outputting 128-dimensional dense vector embeddings.
+- **Serving**: Approximate Nearest Neighbor (ANN) search using Faiss or Milvus over HNSW graphs ($O(\log N)$ latency).
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### Stage 2: Heavy Ranking
+- **Goal**: Accurately predict Click-Through Rate ($pCTR$) and Watch Time for the 1,000 candidates.
+- **Technology**: Multi-task Deep Learning models (DLRM, Transformer-based rankers) incorporating hundreds of real-time features (user history, device, time of day).
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+### Stage 3: Re-Ranking and Business Logic
+- Deduplicates recently watched items.
+- Enforces topic diversity (don't show 10 cooking videos in a row).
+- Injects sponsored promotional content.
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+---
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+## 2. Key Takeaways
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
-
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define recommendation system architecture: candidate generation, ranking, and re-ranking.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does recommendation system architecture: candidate generation, ranking, and re-ranking impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing recommendation system architecture: candidate generation, ranking, and re-ranking?
-3. How do you scale recommendation system architecture: candidate generation, ranking, and re-ranking under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Never evaluate a heavy ranking model over the entire catalog; always use a lightweight retrieval stage first.
+- Precompute item embeddings offline; compute user embeddings online using real-time interaction signals.
+- Include a final re-ranking phase for diversity, fairness, and business constraints.

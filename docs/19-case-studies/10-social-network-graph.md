@@ -1,80 +1,72 @@
-# Design a Social Graph and Friend Recommendation Engine (LinkedIn)
+# Design a Social Network Graph (LinkedIn / Facebook Connections)
 
-> **System Scope**: Stores and queries complex bidirectional social relationships and connection degrees across hundreds of millions of entities.
-> Utilizes graph database structures, distributed breadth-first search for mutual connections, and triangle-closing algorithms.
+A graph storage and query system capable of managing 1 Billion users and 100+ Billion connection edges, executing fast $N$-degree separation searches ("People You May Know", mutual friends, company coworker graphs) within 50ms.
+
+```mermaid
+graph TD
+    Client[Web / Mobile Client] --> GW[API Gateway]
+    GW --> GraphAPI[Graph Query Service]
+    GraphAPI --> Cache[(Graph In-Memory Cache: TAO / Redis)]
+    GraphAPI --> GraphDB[(Distributed Graph DB: Neo4j / AWS Neptune)]
+    
+    GraphAPI --> BiBFS[Bidirectional BFS Search Engine]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a social graph and friend recommendation engine (linkedin) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a social graph and friend recommendation engine (linkedin).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Add friend / follow relationship (directed or undirected graph edge).
+2. Calculate mutual friends between two users.
+3. Find shortest connection path (Degrees of Separation: 1st, 2nd, 3rd degree).
+4. "People You May Know" (PYMK) recommendation queries.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Low Latency**: 2nd degree query $< 30	ext{ms}$.
+- **Scale**: 1 Billion vertices, 100 Billion edges.
+- **Eventual Consistency**: Friend graph updates replicate within 1-2 seconds.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Graph Algorithms: Bidirectional BFS for Degrees of Separation
 
-## 4. API Design
-```http
-POST /api/v1/a-social-graph-and-friend-recommendation-engine-(linkedin)
-Content-Type: application/json
-Idempotency-Key: <uuid>
+Finding the shortest path between User A and User B:
+- **Standard BFS**: Searches outward from User A. If branching factor $B pprox 100$, degree 3 explores $100^3 = \mathbf{1,000,000	ext{ nodes}}$.
+- **Bidirectional BFS**: Simultaneously searches forward from User A and backward from User B:
+  $$2 	imes 100^{1.5} pprox \mathbf{2,000	ext{ nodes explored}}$$
+  *(500x speedup with dramatically lower memory usage!).*
 
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Social Graph and Friend Recommendation Engine (LinkedIn) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    subgraph Forward Search from User A
+        A[User A] --> F1[100 Friends]
+        F1 --> F2[10,000 2nd Degree]
+    end
+
+    subgraph Intersection Frontier
+        F2 <--> Intersection[Common Intersection Node Found!] <--> B2
+    end
+
+    subgraph Backward Search from User B
+        B[User B] --> B1[100 Friends]
+        B1 --> B2[10,000 2nd Degree]
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+---
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+## 3. Storage Architecture: Meta's TAO Pattern
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+Relational databases fail at recursive graph traversal (`JOIN` recursion). Meta developed **TAO**:
+- **Objects (Nodes)**: Typed entities (User, Page, Photo).
+- **Assocs (Edges)**: Directed, timestamped relations (`(User_A, friend, User_B)`).
+- **Two-Tier Cache**: Fast in-memory cache sitting in front of sharded MySQL storage.
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+---
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+## 4. Key Takeaways
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Use Bidirectional BFS to find shortest paths between graph nodes in milliseconds.
+- Model graph relations as Objects and Associations (TAO model).
+- Cache adjacency lists in Redis sets (`SMEMBERS`, `SINTER` for mutual friends).

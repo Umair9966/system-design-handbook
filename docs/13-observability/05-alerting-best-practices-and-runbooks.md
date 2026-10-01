@@ -1,53 +1,51 @@
-# Alerting Best Practices, On-Call Health, and Runbooks
+# Alerting Best Practices, Runbooks, and On-Call
 
-> **Summary**: SRE alerting philosophy: alert on symptoms affecting users (SLO burn rates) rather than low-level cause metrics.
-> Details strategies to prevent alert fatigue, configure multi-window burn rate alerts, and write actionable runbooks.
+Alerting must be actionable, symptom-based, and resilient against alert fatigue. An un-actionable alert woken up at 3:00 AM leads to burnout and missed production outages.
+
+```mermaid
+graph TD
+    Event[System Telemetry / SLI Breach] --> AlertMgr[Alertmanager]
+    AlertMgr --> SeverityCheck{Severity Level}
+    SeverityCheck -->|P1/P2 Critical: Customers Impacted| PagerDuty[PagerDuty / VictorOps -> Page On-Call Engineer]
+    SeverityCheck -->|P3 Minor: Degradation, but redundant| Slack[Slack / Teams Channel Alert]
+    SeverityCheck -->|P4 Informational: Daily report| Jira[Create Jira Ticket / Backlog]
+    PagerDuty --> Runbook[Open Linked Runbook -> Follow Remediation Steps]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of alerting best practices, on-call health, and runbooks.
+## 1. Alert on Symptoms, Not Causes
 
-## Why It Matters
-TBD: The operational and engineering problems alerting best practices, on-call health, and runbooks solves at scale.
+- **Bad (Cause-Based)**: "Server 4 CPU at 92%!" (Who cares if users are experiencing zero errors and sub-50ms latency?)
+- **Good (Symptom-Based)**: "Checkout error rate > 1.5% for 3 consecutive minutes!" (Direct customer impact requiring immediate intervention).
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Anatomy of a Production Alert
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Every critical on-call alert must contain four essential components:
+1. **Summary & Impact**: "Payment processing failure rate is 8.2% (impacts ~500 users/minute)."
+2. **Dashboard Link**: One-click link to Grafana dashboard showing relevant RED metrics.
+3. **Runbook Link**: Clear step-by-step remediation guide.
+4. **Trigger Condition**: Exact Prometheus PromQL query that tripped the alert.
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```yaml
+# Prometheus Alert Rule
+- alert: HighPaymentFailureRate
+  expr: (sum(rate(http_requests_total{service="payment",status=~"5.."}[5m])) 
+        / sum(rate(http_requests_total{service="payment"}[5m]))) * 100 > 5
+  for: 3m
+  labels:
+    severity: critical
+  annotations:
+    summary: "Payment Service error rate exceeds 5%"
+    runbook_url: "https://wiki.company.internal/runbooks/payment-failure"
+```
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define alerting best practices, on-call health, and runbooks.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does alerting best practices, on-call health, and runbooks impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing alerting best practices, on-call health, and runbooks?
-3. How do you scale alerting best practices, on-call health, and runbooks under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Page humans only for critical, user-facing, actionable emergencies.
+- Every alert must include a direct link to a tested Runbook.
+- Continuously tune alerts; delete flapping alerts that do not require immediate human action.

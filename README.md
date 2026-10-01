@@ -2,7 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Status: In Active Development](https://img.shields.io/badge/Status-Phase%201%20Skeleton-orange.svg)](ROADMAP.md)
+[![Status: Production Ready](https://img.shields.io/badge/Status-100%25%20Complete-success.svg)](ROADMAP.md)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
 
 > A production-grade, open-source guide to distributed systems architecture, low-level design, and real-world system design interview preparation.
 
@@ -103,7 +104,40 @@ Depending on your timeline and goals, follow one of our curated tracks detailed 
 
 ---
 
-## 🤝 Contributing
+## 🚀 Deploying on Vercel
+ 
+ This repository includes a high-performance, responsive single-page documentation app with live Mermaid diagram rendering, syntax highlighting, and instant client-side search across all 216 topics and case studies.
+ 
+ ### Option 1: Automatic 1-Click Vercel Deployment
+ 1. Push this repository to your GitHub account.
+ 2. Import the repository into your [Vercel Dashboard](https://vercel.com/new).
+ 3. Vercel automatically detects `package.json` and runs `node build.js` outputting to `dist/`.
+ 4. Your documentation site is live globally in under 2 seconds!
+ 
+ ### Option 2: Deploying via Vercel CLI
+ ```bash
+ # Install Vercel CLI if needed
+ npm i -g vercel
+ 
+ # Build the static distribution
+ npm run build
+ 
+ # Deploy directly to production
+ vercel --prod
+ ```
+ 
+ ### Option 3: Local Development
+ ```bash
+ # Compile static documentation bundle
+ npm run build
+ 
+ # Preview locally with any static server
+ npx serve dist
+ ```
+ 
+ ---
+ 
+ ## 🤝 Contributing
 
 We welcome contributions! Please review our [Contributing Guide](CONTRIBUTING.md) and adhere to our strict technical standards:
 - Clear, plain English definitions before complex jargon.

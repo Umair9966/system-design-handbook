@@ -1,80 +1,59 @@
-# Design a Location-Based Proximity Service (Yelp/Nearby Places)
+# Design a Proximity Service (Yelp / Google Places Nearby)
 
-> **System Scope**: High-read geospatial query engine discovering nearby businesses and points of interest within customizable radii.
-> Utilizes Geohash and Quadtree spatial partitioning, extensive CDN/Redis spatial caching, and business filter indexing.
+A location-based search service capable of finding nearby points of interest (restaurants, gas stations, ATMs) within a specified radius (e.g., "Find all Italian restaurants within 2 km of my location") with sub-50ms latency.
+
+```mermaid
+graph TD
+    User[User Mobile App: Lat 37.77, Lng -122.41] --> API[Proximity Query Gateway]
+    API --> GeohashCalc[Geohash / Quadtree Converter]
+    GeohashCalc --> GeoCache[(Geospatial Cache: Redis GEO / Memory)]
+    GeoCache --> PlaceDB[(Places Database: PostgreSQL + PostGIS)]
+    
+    PlaceDB --> S3[(Place Photos & Reviews Store)]
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a location-based proximity service (yelp/nearby places) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a location-based proximity service (yelp/nearby places).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. Add, update, and delete places of interest (restaurants, bars, stores).
+2. Given a latitude, longitude, and radius, return all matching places within the radius.
+3. Filter by category, price, and customer rating.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Low Latency**: Nearby search $< 50	ext{ms}$.
+- **High Read Scale**: 100:1 read-to-write ratio (places rarely move; users constantly search).
+- **High Availability**: 99.99%.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Geospatial Indexing: Geohashes vs PostGIS
 
-## 4. API Design
-```http
-POST /api/v1/a-location-based-proximity-service-(yelp/nearby-places)
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
 graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Location-Based Proximity Service (Yelp/Nearby Places) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+    subgraph "Geohash Precision Hierarchy"
+        G4["Geohash Length 4: ~39km x ~19km (City Level)"]
+        G5["Geohash Length 5: ~4.9km x ~4.9km (Neighborhood Level)"]
+        G6["Geohash Length 6: ~1.2km x ~0.6km (Street Level - Optimal!)"]
+    end
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### Radius Query Mechanics:
+1. Convert user's latitude/longitude to a **6-character Geohash** (e.g., `9q8yyk`).
+2. Calculate the **8 surrounding neighboring geohash cells** to eliminate boundary miss edge cases.
+3. Query database or Redis using fast prefix matching:
+   ```sql
+   SELECT place_id, name, lat, lng 
+   FROM places 
+   WHERE geohash_prefix IN ('9q8yyk', '9q8yym', ...);
+   ```
+4. Filter matching candidates in memory using the Haversine distance formula.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+---
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+## 3. Key Takeaways
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
-
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
-
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
-
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
-
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Geohash prefix matching reduces 2D geospatial searches to simple 1D database index range scans.
+- Always query the target cell plus its 8 immediate neighboring cells to avoid edge boundary misses.
+- Cache neighborhood query results at edge CDNs and in Redis to absorb 95% of read traffic.

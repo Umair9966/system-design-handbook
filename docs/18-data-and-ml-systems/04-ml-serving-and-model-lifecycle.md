@@ -1,53 +1,42 @@
-# ML Model Serving, Versioning, and Drift Monitoring
+# ML Serving, Model Registry, and MLOps
 
-> **Summary**: Architecture of production model inference: synchronous low-latency gRPC endpoints vs asynchronous batch queue inference.
-> Covers Model Registries, Canary model rollouts, Shadow deployments, and detecting Data Drift vs Concept Drift.
+Deploying machine learning models to production requires automated CI/CD for models, artifact versioning (MLflow), and low-latency inference runtimes (Triton, TorchServe).
+
+```mermaid
+graph LR
+    subgraph MLOps Lifecycle
+        Train[1. Continuous Training] --> Eval[2. Model Evaluation & Benchmark]
+        Eval --> Reg[3. Model Registry (MLflow / Weights & Biases)]
+        Reg --> CanaryDeploy[4. Canary Deployment (Shadow / AB Test)]
+        CanaryDeploy --> Serving[5. Model Server (Triton / ONNX Runtime)]
+        Serving --> Monitor[6. Drift Detection (Evidently AI)]
+        Monitor -.->|Data Drift Detected!| Train
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of ml model serving, versioning, and drift monitoring.
+## 1. Model Serving Patterns
 
-## Why It Matters
-TBD: The operational and engineering problems ml model serving, versioning, and drift monitoring solves at scale.
+| Pattern | Latency | Infrastructure Cost | Scalability | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **Real-Time Online RPC** | 10ms - 50ms | High (24/7 GPU/CPU pods) | Autoscaling via KEDA | Fraud detection, live ranking |
+| **Batch Offline Scoring** | Hours | Low (Ephemeral batch compute) | Petabytes | Daily recommendation emails |
+| **Embedded in Process** | < 1ms | Low (Runs inside app memory) | Scales with app | Lightweight Decision Trees, ONNX models |
+| **Edge / Mobile On-Device**| < 5ms | Zero server cost | Infinite | CoreML, TFLite on smartphones |
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Detecting Data & Concept Drift
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+- **Data Drift (Covariate Shift)**: The distribution of incoming input features $P(X)$ changes over time (e.g., user income distribution changes during an inflation spike).
+- **Concept Drift**: The statistical relationship between features and target labels $P(Y|X)$ changes (e.g., consumer purchasing patterns shift overnight during a pandemic).
+- *Remediation*: Monitor Population Stability Index (PSI) or Kolmogorov-Smirnov statistical tests; trigger automated model retraining when drift exceeds threshold.
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+---
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+## 3. Key Takeaways
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define ml model serving, versioning, and drift monitoring.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does ml model serving, versioning, and drift monitoring impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing ml model serving, versioning, and drift monitoring?
-3. How do you scale ml model serving, versioning, and drift monitoring under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Version all model weights, datasets, and hyperparameters using a Model Registry (MLflow).
+- Optimize inference models with ONNX Runtime or TensorRT to reduce GPU costs by 3x-5x.
+- Continuously monitor for feature drift in production to prevent silent model degradation.

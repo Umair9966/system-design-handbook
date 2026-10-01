@@ -1,80 +1,72 @@
-# Design a Distributed Fault-Tolerant Key-Value Store (Dynamo)
+# Design a Distributed Key-Value Store (DynamoDB / Cassandra)
 
-> **System Scope**: High-availability decentralized key-value storage engine modeled on Amazon's Dynamo and Apache Cassandra.
-> Incorporates consistent hashing, virtual nodes, tunable quorum consensus (R+W>N), hinted handoff, and Merkle anti-entropy.
+A highly available, horizontally scalable distributed key-value store modeled after Amazon Dynamo and Apache Cassandra, featuring consistent hashing, tunable consistency, and masterless replication.
+
+```mermaid
+graph TD
+    Client[Client Application] --> NodeA[Coordinator Node A]
+    
+    subgraph "Masterless Consistent Hash Ring (Dynamo Topology)"
+        NodeA <-->|Gossip Protocol: Heartbeats & Node State| NodeB[Node B]
+        NodeB <--> NodeC[Node C]
+        NodeC <--> NodeD[Node D]
+        NodeD <--> NodeA
+    end
+
+    NodeA -->|Write: Quorum W=2| NodeB
+    NodeA -->|Write: Quorum W=2| NodeC
+```
 
 ---
 
-## 1. Problem Statement
-<!-- Case study content to be fully implemented in Phase 3 -->
-High-level architectural problem statement for a distributed fault-tolerant key-value store (dynamo) supporting millions of active users.
+## 1. Requirements
 
-## 2. Requirements
-### Functional
-- Core user operations and business workflows for a distributed fault-tolerant key-value store (dynamo).
-- High-priority interactive and asynchronous features.
+### Functional Requirements:
+1. `put(key, value)`: Stores an arbitrary byte payload associated with a key.
+2. `get(key)`: Retrieves the value associated with the key.
 
-### Non-Functional
-- **Scale**: Target QPS, daily active users (DAU), and peak traffic multipliers.
-- **Latency**: P99 response time targets.
-- **Availability**: 99.99% availability with zero single points of failure.
-- **Consistency**: Consistency vs availability trade-offs (PACELC).
+### Non-Functional Requirements:
+- **Massive Scalability**: Scale to millions of writes and reads per second across hundreds of nodes.
+- **Tunable Consistency**: Allow callers to select consistency level per request (Strong vs Eventual).
+- **High Availability**: No Single Point of Failure (SPOF); survives node crashes and network partitions.
 
-### Out of Scope
-- Secondary enterprise admin tooling and auxiliary back-office features.
+---
 
-## 3. Capacity Estimation
-- Read QPS, Write QPS, Storage capacity over 5 years, Ingress/Egress bandwidth, and Cache RAM sizing.
+## 2. Core Architectural Pillars
 
-## 4. API Design
-```http
-POST /api/v1/a-distributed-fault-tolerant-key-value-store-(dynamo)
-Content-Type: application/json
-Idempotency-Key: <uuid>
-
-{
-  "request_payload": "value"
-}
-```
-
-## 5. Data Model and Storage Choice
-- Data persistence strategy, relational vs NoSQL selection criteria, and indexing schema.
-
-## 6. High-Level Architecture
 ```mermaid
-graph TD
-    Client([Client App]) --> CDN[CDN / Edge]
-    CDN --> LB[L7 Load Balancer]
-    LB --> Gateway[API Gateway]
-    Gateway --> Service[a Distributed Fault-Tolerant Key-Value Store (Dynamo) Core Service]
-    Service --> Cache[(Distributed Cache)]
-    Service --> PrimaryDB[(Primary Database)]
-    Service --> MessageQueue[(Event Queue / Kafka)]
+graph LR
+    P1[1. Consistent Hashing with Virtual Nodes] --> P2[2. Masterless Quorum (N, R, W)]
+    P2 --> P3[3. LSM-Tree Storage Engine (SSTable + MemTable)]
+    P3 --> P4[4. Gossip Protocol (Failure Detection)]
+    P4 --> P5[5. Anti-Entropy with Merkle Trees]
 ```
 
-## 7. Deep Dives
-- **Bottleneck 1**: Algorithmic optimizations and concurrency control.
-- **Bottleneck 2**: Data replication, partitioning, and consistency boundaries.
+### 1. Consistent Hashing with Virtual Nodes
+Distributes keys evenly across physical storage nodes. Virtual nodes (e.g., 256 virtual tokens per physical server) eliminate hot spot imbalance and ensure smooth rebalancing when adding/removing nodes.
 
-## 8. Scaling Strategy
-- Multi-tier caching, consistent hashing ring partitioning, and read replica topologies.
+### 2. Tunable Quorum Consistency ($R + W > N$)
+- $N$: Number of replicas storing each key.
+- $W$: Number of replicas that must acknowledge a write before returning success.
+- $R$: Number of replicas that must respond to a read before returning data.
+- **Strong Consistency Formula**:
+  $$R + W > N$$
+  *(Guarantees that the read set and write set overlap on at least one replica node).*
 
-## 9. Reliability and Failure Scenarios
-- Component failure mitigation, circuit breakers, dead-letter queues, and cross-region disaster recovery.
+---
 
-## 10. Security and Abuse Considerations
-- Authentication, authorization (RBAC), rate limiting, DDoS mitigation, and audit logging.
+## 3. Storage Engine: LSM-Tree Internals
 
-## 11. Monitoring and Metrics
-- RED and USE metrics, distributed tracing spans, and SLO error budget alerting.
+Each node writes incoming data using an **LSM-Tree** (Log-Structured Merge-Tree) to achieve maximum write throughput:
+1. Append to sequential **Write-Ahead Log (WAL)** on disk (crash recovery).
+2. Insert into in-memory sorted **MemTable** (Red-Black or SkipList).
+3. When MemTable reaches 64MB, flush sequentially to disk as an immutable **SSTable** (Sorted String Table).
+4. Accelerate point read misses using an in-memory **Bloom Filter**.
 
-## 12. Trade-offs and Alternatives Considered
-- Evaluation of competing architectural paradigms and rationale for selected design.
+---
 
-## 13. Possible Extensions
-- Future capabilities and multi-region active-active deployments.
+## 4. Key Takeaways
 
-## 14. Interview Follow-Up Questions
-1. How does the architecture handle a sudden 10x viral traffic spike?
-2. What happens if the distributed cache crashes simultaneously across all zones?
-3. How do you guarantee data consistency during network partitioning?
+- Masterless architectures (Dynamo) eliminate leader election downtime.
+- Tune $R$ and $W$ per query to balance latency against strong consistency.
+- Use LSM-Trees for ultra-high write throughput, backed by Bloom Filters to optimize read misses.

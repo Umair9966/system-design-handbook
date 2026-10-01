@@ -1,0 +1,19 @@
+{
+  "name": "system-design-handbook",
+  "version": "1.0.0",
+  "description": "An open-source, production-grade guide covering system design from fundamentals to 35 real-world case studies.",
+  "scripts": {
+    "build": "node build.js",
+    "start": "npx serve dist"
+  },
+  "keywords": [
+    "system-design",
+    "distributed-systems",
+    "architecture",
+    "scalability",
+    "microservices",
+    "interview-preparation"
+  ],
+  "author": "Open Source Community",
+  "license": "MIT"
+}

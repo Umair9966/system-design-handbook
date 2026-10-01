@@ -1,53 +1,49 @@
-# CI/CD Pipelines: Continuous Integration and Continuous Delivery
+# CI/CD Pipelines and Automated Delivery
 
-> **Summary**: Architecting automated software delivery: code commit, linting, unit testing, container build, and security scanning.
-> Details artifact registries, staging environments, progressive deployment strategies, and automated rollbacks.
+Continuous Integration (CI) and Continuous Delivery (CD) automate the journey of software from code commit through automated testing, security scanning, container packaging, and production rollout.
+
+```mermaid
+graph LR
+    subgraph Continuous Integration (CI)
+        Commit[Git Push / PR] --> Lint[Lint & Static Analysis]
+        Lint --> Unit[Unit & Integration Tests]
+        Unit --> Security[SAST & Dependency Scan]
+        Security --> Build[Docker Build & Push to Registry]
+    end
+
+    subgraph Continuous Delivery / Deployment (CD)
+        Build --> Staging[Deploy to Staging]
+        Staging --> E2E[End-to-End Automated Tests]
+        E2E --> Canary[Canary Release to Production (5%)]
+        Canary --> Full[Promote to 100% Production]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of ci/cd pipelines: continuous integration and continuous delivery.
+## 1. GitOps: The Modern CD Paradigm (ArgoCD & Flux)
 
-## Why It Matters
-TBD: The operational and engineering problems ci/cd pipelines: continuous integration and continuous delivery solves at scale.
+GitOps treats Git repositories as the single source of truth for declared infrastructure and application state.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+```mermaid
+graph LR
+    Dev[Developer] -->|git commit| GitRepo[Git Repository (Manifests / Helm)]
+    subgraph Kubernetes Cluster
+        Argo[ArgoCD Controller] -->|Watches Git| GitRepo
+        Argo -->|Compares Desired vs Live State| K8s[Live Cluster Resources]
+        Argo -->|Auto-Syncs Discrepancies / Reverts Drift| K8s
+    end
+```
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+### Core Tenets of GitOps:
+1. **Declarative State**: The entire system is described declaratively in Git (YAML / Helm / Kustomize).
+2. **Automated Pull Reconciliation**: The in-cluster agent pulls changes from Git rather than external CI pushing credentials into the cluster.
+3. **Drift Detection**: Any manual `kubectl edit` in production is automatically overwritten and reverted back to the Git state.
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+---
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+## 2. Key Takeaways
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
-
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define ci/cd pipelines: continuous integration and continuous delivery.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does ci/cd pipelines: continuous integration and continuous delivery impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing ci/cd pipelines: continuous integration and continuous delivery?
-3. How do you scale ci/cd pipelines: continuous integration and continuous delivery under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Shift security left by integrating static analysis (SAST) and container vulnerability scanning into pull request CI checks.
+- Adopt GitOps (ArgoCD) to eliminate giving CI systems broad administrative cluster credentials.
+- Automate canary rollouts with metric verification to catch regressions before full deployment.

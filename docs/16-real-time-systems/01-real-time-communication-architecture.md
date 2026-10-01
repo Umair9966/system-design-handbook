@@ -1,53 +1,65 @@
-# Real-Time Communication Architecture: Scaling Persistent Connections
+# Real-Time Communication Architecture: WebSockets at Scale
 
-> **Summary**: Architecting gateway tiers handling millions of persistent, long-lived TCP/WebSocket client connections.
-> Details connection offloading, state isolation, connection draining during deployments, and Redis Pub/Sub routing backplanes.
+Architecting systems to maintain millions of persistent, bidirectional, low-latency TCP connections (WebSockets) requires solving connection statefulness, edge proxy termination, and distributed message routing.
+
+```mermaid
+graph TD
+    Client1[Mobile Client A] -->|WSS Persistent TCP| WS1[WebSocket Gateway Pod 1]
+    Client2[Web Client B] -->|WSS Persistent TCP| WS2[WebSocket Gateway Pod 2]
+
+    WS1 <--> PubSub[(Redis Pub/Sub / NATS Core)]
+    WS2 <--> PubSub
+
+    SessionStore[(Redis Session Table: User -> Pod IP)]
+    WS1 -.->|Heartbeat Ping/Pong| SessionStore
+    WS2 -.->|Heartbeat Ping/Pong| SessionStore
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of real-time communication architecture: scaling persistent connections.
+## 1. The Stateful Connection Challenge
 
-## Why It Matters
-TBD: The operational and engineering problems real-time communication architecture: scaling persistent connections solves at scale.
+Unlike stateless HTTP requests where any backend pod can fulfill any request, a WebSocket connection pins the client to a specific server instance for hours or days.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+### Scaling Bottlenecks:
+1. **File Descriptors (FD Limits)**: Every TCP socket consumes an OS file descriptor. Kernel tuning (`sysctl -w fs.file-max=2097152`, `ulimit -n 1048576`) is mandatory.
+2. **RAM per Connection**: A kernel TCP socket buffer and TLS state consumes 4KB - 16KB of RAM. 1 million concurrent connections require $pprox 10	ext{GB} - 16	ext{GB}$ of pure memory just to maintain idle sockets.
+3. **Cross-Server Routing**: When User A (connected to Pod 1) sends a chat message to User B (connected to Pod 2), Pod 1 cannot write to Pod 2's local memory.
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Distributed Message Routing with Pub/Sub
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+To route messages between arbitrary gateway pods:
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Alice as Alice (Client)
+    participant Pod1 as WebSocket Pod 1
+    participant Redis as Redis Cluster / NATS
+    participant Pod2 as WebSocket Pod 2
+    participant Bob as Bob (Client)
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+    Alice->>Pod1: Send: {"to": "bob", "text": "Hi Bob!"}
+    Pod1->>Redis: PUBLISH channel:user:bob {"from": "alice", "text": "Hi Bob!"}
+    Note over Redis: Fanout to all subscribed gateway nodes
+    Redis-->>Pod2: Delivers payload (Pod 2 holds active socket for Bob)
+    Pod2->>Bob: Push over WebSocket: {"from": "alice", "text": "Hi Bob!"}
+```
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+---
 
-## Key Takeaways
-- Foundational architectural trade-offs define real-time communication architecture: scaling persistent connections.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+## 3. Connection Lifecycles: Heartbeats and Reconnection Thundering Herds
 
-## Common Interview Questions
-1. How does real-time communication architecture: scaling persistent connections impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing real-time communication architecture: scaling persistent connections?
-3. How do you scale real-time communication architecture: scaling persistent connections under 10x traffic spikes?
+- **Heartbeats (Ping/Pong)**: Fire every 30-60 seconds. Proxies (AWS ALB, Cloudflare) close idle TCP connections after 60-120 seconds.
+- **Thundering Herd on Gateway Restart**: When a gateway node crashes, 50,000 clients attempt to reconnect simultaneously.
+  - *Fix*: Mandatory **exponential backoff with full jitter** on client reconnect loops.
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+---
+
+## 4. Key Takeaways
+
+- Terminate WebSockets at dedicated, lightweight gateway edge clusters.
+- Use high-throughput messaging backbones (Redis Pub/Sub, NATS, Kafka) to route messages across connection pods.
+- Tune OS kernel file descriptors and socket buffer limits to support 100K+ concurrent connections per server.

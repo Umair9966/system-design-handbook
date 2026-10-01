@@ -1,53 +1,60 @@
 # Structured Logging and Correlation IDs
 
-> **Summary**: Explains migrating from unstructured text logs to structured JSON logs with standardized metadata schemas.
-> Details W3C TraceContext standards, Mapped Diagnostic Context (MDC), and passing correlation IDs across boundaries.
+Unstructured plain-text logs (`printf("User logged in")`) are virtually useless in distributed microservices. Structured JSON logging paired with Correlation IDs enables instant searchability and end-to-end request tracing.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as User Browser
+    participant GW as API Gateway
+    participant OrderSvc as Order Service
+    participant PaySvc as Payment Service
+
+    Client->>GW: POST /orders (No Correlation ID)
+    Note over GW: Generates: X-Correlation-ID: 7a8b-9c0d-1e2f
+    GW->>OrderSvc: POST /orders (Header: X-Correlation-ID: 7a8b-9c0d-1e2f)
+    Note over OrderSvc: Logs with {"correlation_id": "7a8b-9c0d-1e2f", "action": "create"}
+    OrderSvc->>PaySvc: POST /charge (Header: X-Correlation-ID: 7a8b-9c0d-1e2f)
+    Note over PaySvc: Logs with {"correlation_id": "7a8b-9c0d-1e2f", "action": "charge_failed"}
+    PaySvc-->>OrderSvc: 500 Error
+    OrderSvc-->>GW: 500 Error
+    GW-->>Client: 500 Internal Error (Response Header: X-Correlation-ID: 7a8b-9c0d-1e2f)
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of structured logging and correlation ids.
+## 1. Structured JSON Log Schema
 
-## Why It Matters
-TBD: The operational and engineering problems structured logging and correlation ids solves at scale.
+Logs should be emitted as single-line JSON objects to standard output (`stdout`), where log collectors (Fluentbit, Vector) ingest and index them:
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+```json
+{
+  "timestamp": "2026-10-01T20:25:00.123Z",
+  "level": "ERROR",
+  "service": "payment-service",
+  "correlation_id": "7a8b-9c0d-1e2f",
+  "user_id": "usr_9981",
+  "order_id": "ord_5521",
+  "message": "Payment gateway declined card: Insufficient funds",
+  "gateway_error_code": "CARD_DECLINED",
+  "duration_ms": 342,
+  "stack_trace": "..."
+}
+```
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+---
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+## 2. Correlation ID Propagation Rules
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+1. **Edge Injection**: If incoming request lacks `X-Correlation-ID` (or `traceparent`), the Edge API Gateway generates a UUIDv4.
+2. **Context Passing**: Transport headers into language context (e.g., Go `context.Context`, Node.js `AsyncLocalStorage`, Java `MDC`).
+3. **Outbound Forwarding**: HTTP/gRPC client interceptors automatically inject the header into all outbound calls.
+4. **Return in Errors**: Always return the Correlation ID in HTTP error responses so customers can share it with customer support.
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+---
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+## 3. Key Takeaways
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
-
-## Key Takeaways
-- Foundational architectural trade-offs define structured logging and correlation ids.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does structured logging and correlation ids impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing structured logging and correlation ids?
-3. How do you scale structured logging and correlation ids under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Always log in structured JSON format; never emit unstructured text strings.
+- Pass Correlation IDs across every network hop and thread boundary.
+- Mask PII (credit cards, passwords, SSNs) at the logger level before emitting.

@@ -1,53 +1,35 @@
-# Top 15 Common System Design Interview Mistakes and How to Avoid Them
+# Top 10 System Design Interview Mistakes
 
-> **Summary**: Analyzes the most frequent failure modes that cause even experienced engineers to fail system design interviews.
-> Covers jumping to technology buzzwords prematurely, ignoring non-functional constraints, silent designing, and over-engineering.
+Understanding the anti-patterns that cause candidates to fail system design interviews.
+
+```mermaid
+graph TD
+    Mistakes[Top Interview Pitfalls]
+    Mistakes --> M1[1. Starting with Tech Buzzwords ('Let's use Kafka and Blockchain')]
+    Mistakes --> M2[2. Silent Drawing without Explaining Thought Process]
+    Mistakes --> M3[3. Ignoring Scale Numbers in Architectural Decisions]
+    Mistakes --> M4[4. Single Point of Failure (SPOF) Blindness]
+    Mistakes --> M5[5. Over-Engineering Simple Requirements]
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of top 15 common system design interview mistakes and how to avoid them.
+## The 10 Deadly Sins:
 
-## Why It Matters
-TBD: The operational and engineering problems top 15 common system design interview mistakes and how to avoid them solves at scale.
+1. **Premature Technology Naming**: Proposing Kafka or Cassandra before defining functional requirements or traffic scale.
+2. **Monologuing without Checking In**: Speaking for 10 minutes continuously without pausing to confirm alignment with the interviewer.
+3. **Ignoring Back-of-the-Envelope Math**: Designing an in-memory Redis cluster for a dataset that requires 100 Petabytes of disk storage.
+4. **Drawing a "Magic Box"**: Labeling a component "Load Balancer" or "Message Queue" without being able to explain how it works internally under failure.
+5. **Treating Databases as Black Boxes**: Ignoring indexing, replication lag, transaction isolation levels, and sharding strategies.
+6. **Ignoring Failures**: Designing purely for the happy path and panicking when asked: "What happens if this network link severs?"
+7. **Over-Engineering**: Proposing a 50-microservice Kubernetes mesh for a system serving 10 requests per minute.
+8. **Neglecting Data Models**: Skipping the database schema and entity relationships.
+9. **Rigidity and Defensiveness**: Arguing with the interviewer when they offer hints or challenge assumptions.
+10. **Running Out of Time**: Spending 35 minutes on requirements and calculations, leaving 5 minutes for the actual architecture.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
-
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
-
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
-
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
-
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
-
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
-
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+---
 
 ## Key Takeaways
-- Foundational architectural trade-offs define top 15 common system design interview mistakes and how to avoid them.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
 
-## Common Interview Questions
-1. How does top 15 common system design interview mistakes and how to avoid them impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing top 15 common system design interview mistakes and how to avoid them?
-3. How do you scale top 15 common system design interview mistakes and how to avoid them under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- Focus on fundamentals: data models, access patterns, and fault tolerance.
+- Check in with the interviewer every 3-4 minutes: *"Does this component address your primary concern, or should we dive into the storage engine next?"*

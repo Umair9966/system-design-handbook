@@ -1,53 +1,51 @@
-# Distributed File Systems: GFS and HDFS Architecture
+# Distributed File Systems (HDFS, Ceph, and GlusterFS)
 
-> **Summary**: Deconstructs Google File System (GFS) and Hadoop Distributed File System (HDFS) architectural blueprints.
-> Details Master/NameNode metadata coordination, Chunkserver/DataNode storage, 64MB/128MB chunk sizing, and replication.
+Distributed file systems pool physical storage across hundreds or thousands of networked commodity servers, presenting a unified, fault-tolerant namespace.
+
+```mermaid
+graph TD
+    subgraph "HDFS Architecture (Master-Worker)"
+        Client[HDFS Client]
+        NameNode[NameNode (Master: Metadata & Block Map)]
+        DataNode1[DataNode 1 (Block A, B)]
+        DataNode2[DataNode 2 (Block A, C)]
+        DataNode3[DataNode 3 (Block B, C)]
+
+        Client -->|1. Request block locations| NameNode
+        NameNode -.->|Returns DataNode IPs| Client
+        Client -->|2. Parallel stream read| DataNode1
+        Client -->|2. Parallel stream read| DataNode2
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of distributed file systems: gfs and hdfs architecture.
+## 1. Hadoop Distributed File System (HDFS) Architecture
 
-## Why It Matters
-TBD: The operational and engineering problems distributed file systems: gfs and hdfs architecture solves at scale.
+HDFS was designed for batch streaming workloads (MapReduce, Spark) with large sequential files:
+- **Large Block Size**: Default 128MB or 256MB blocks (minimizes metadata overhead on the NameNode).
+- **Single Master (NameNode)**: Holds all directory metadata and block mapping in memory. Highly performant, but historical single-point-of-failure and memory capacity bottleneck.
+- **Write-Once-Read-Many (WORM)**: Files cannot be modified in-place; only sequential appends are allowed.
+- **Replication**: Default 3x rack-aware replication (2 copies in local rack, 1 copy in a remote rack).
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Ceph: Decentralized CRUSH Algorithm
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+Ceph eliminates the centralized metadata lookup bottleneck entirely using the **CRUSH** (Controlled Replication Under Scalable Hashing) algorithm.
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+```mermaid
+graph LR
+    Client[Ceph Client] -->|Calculates mathematically:<br/>CRUSH(Object_ID, Cluster_Map)| OSD[Direct Target: Storage Daemon (OSD)]
+    Note over Client: Zero lookup queries to a central metadata server!
+```
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+Clients compute the exact storage node (OSD) mathematically on the fly, allowing Ceph clusters to scale to tens of thousands of nodes without metadata server saturation.
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+---
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+## 3. Key Takeaways
 
-## Key Takeaways
-- Foundational architectural trade-offs define distributed file systems: gfs and hdfs architecture.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
-
-## Common Interview Questions
-1. How does distributed file systems: gfs and hdfs architecture impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing distributed file systems: gfs and hdfs architecture?
-3. How do you scale distributed file systems: gfs and hdfs architecture under 10x traffic spikes?
-
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+- HDFS is optimized for high-throughput batch processing of massive sequential files.
+- Ceph eliminates centralized metadata bottlenecks using deterministic mathematical mapping (CRUSH).
+- Cloud object storage (S3) has largely replaced on-premises HDFS for modern cloud-native analytics.

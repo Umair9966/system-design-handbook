@@ -1,53 +1,96 @@
-# Worked LLD Problem: Thread-Safe In-Memory LRU Cache
+# Worked LLD: Thread-Safe LRU Cache
 
-> **Summary**: Production-grade implementation of an LRU cache achieving O(1) time complexity for both `get` and `put` operations.
-> Pairs a Hash Map with a custom Doubly Linked List, incorporating lock striping for high concurrent throughput.
+A complete Low-Level Design and production implementation of an $O(1)$ Least Recently Used (LRU) Cache using a Hash Map and a Doubly Linked List with Read-Write concurrency locks.
+
+```mermaid
+graph LR
+    subgraph "Hash Map: O(1) Key Lookup"
+        HM["'key1' -> Node(key1, val1)<br/>'key2' -> Node(key2, val2)"]
+    end
+
+    subgraph "Doubly Linked List: O(1) Eviction & Promotion"
+        Head[Head (Dummy)] <--> N1[Node 1: Most Recent] <--> N2[Node 2] <--> Tail[Tail (Dummy: Least Recent)]
+    end
+```
 
 ---
 
-## Overview
-<!-- Topic content to be fully implemented in Phase 2 -->
-TBD: Definition, architectural significance, and core mechanics of worked lld problem: thread-safe in-memory lru cache.
+## 1. Requirements
 
-## Why It Matters
-TBD: The operational and engineering problems worked lld problem: thread-safe in-memory lru cache solves at scale.
+1. $O(1)$ time complexity for `get(key)` and `put(key, value)`.
+2. Fixed maximum capacity $C$.
+3. When capacity is exceeded, evict the least recently used element.
+4. **Thread-Safe**: Concurrent reads and writes supported with high throughput.
 
-## Core Concepts
-TBD: Key primitives, architectural terminology, and foundational building blocks.
+---
 
-## How It Works
-TBD: Step-by-step structural workflows, data flow lifecycles, and component interactions.
+## 2. Production Code Implementation (Python)
 
-## Trade-offs
-| Dimension | Benefit | Cost / Trade-off |
-| :--- | :--- | :--- |
-| **Performance** | TBD | TBD |
-| **Complexity** | TBD | TBD |
-| **Reliability** | TBD | TBD |
+```python
+import threading
+from typing import Optional, Dict
 
-## When to Use / When NOT to Use
-### When to Use
-- TBD: Primary production scenarios.
+class Node:
+    def __init__(self, key: int = 0, val: int = 0):
+        self.key = key
+        self.val = val
+        self.prev: Optional['Node'] = None
+        self.next: Optional['Node'] = None
 
-### When NOT to Use
-- TBD: Anti-patterns and scenarios where simpler alternatives suffice.
+class ThreadSafeLRUCache:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        self.map: Dict[int, Node] = {}
+        
+        # Sentinel dummy head and tail nodes
+        self.head = Node()
+        self.tail = Node()
+        self.head.next = self.tail
+        self.tail.prev = self.head
+        
+        self.lock = threading.RLock()
 
-## Real-World Examples
-- TBD: Real-world engineering implementations and corporate systems.
+    def _remove(self, node: Node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
 
-## Common Pitfalls
-- TBD: High-impact architectural traps, misconfigurations, and edge cases.
+    def _add_to_front(self, node: Node):
+        node.next = self.head.next
+        node.prev = self.head
+        self.head.next.prev = node
+        self.head.next = node
 
-## Key Takeaways
-- Foundational architectural trade-offs define worked lld problem: thread-safe in-memory lru cache.
-- Scalability and failure modes must be accounted for upfront.
-- Ground decisions in measured workload characteristics.
+    def get(self, key: int) -> int:
+        with self.lock:
+            if key not in self.map:
+                return -1
+            node = self.map[key]
+            self._remove(node)
+            self._add_to_front(node)
+            return node.val
 
-## Common Interview Questions
-1. How does worked lld problem: thread-safe in-memory lru cache impact system latency and throughput?
-2. What failure scenarios must you mitigate when implementing worked lld problem: thread-safe in-memory lru cache?
-3. How do you scale worked lld problem: thread-safe in-memory lru cache under 10x traffic spikes?
+    def put(self, key: int, value: int):
+        with self.lock:
+            if key in self.map:
+                node = self.map[key]
+                node.val = value
+                self._remove(node)
+                self._add_to_front(node)
+            else:
+                if len(self.map) >= self.capacity:
+                    lru = self.tail.prev
+                    self._remove(lru)
+                    del self.map[lru.key]
 
-## Further Reading
-- Core System Design Literature
-- Production Architecture Documentation
+                new_node = Node(key, value)
+                self.map[key] = new_node
+                self._add_to_front(new_node)
+```
+
+---
+
+## 3. Key Takeaways
+
+- Sentinel head and tail dummy nodes eliminate edge case checks for empty lists or single-element lists.
+- Combining a Hash Map and Doubly Linked List achieves guaranteed $O(1)$ operations.
+- Use Read-Write locks (`sync.RWMutex` in Go, `ReentrantReadWriteLock` in Java) for high read concurrency.
