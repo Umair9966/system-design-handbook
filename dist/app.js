@@ -97,8 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Process markdown and handle Mermaid blocks
     let rawMd = doc.content;
     
-    // Replace ```mermaid code blocks with <div class="mermaid">...</div>
-    const mermaidRegex = /\\`\\`\\`mermaid\s*([\s\S]*?)\\`\\`\\`/g;
+    const mermaidRegex = /```mermaid\s*([\s\S]*?)```/g;
     const mermaidPlaceholders = [];
     rawMd = rawMd.replace(mermaidRegex, (match, code) => {
       const idx = mermaidPlaceholders.length;
